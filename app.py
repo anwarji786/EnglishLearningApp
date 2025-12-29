@@ -86,7 +86,7 @@ class StorageManager:
             return UserProfile(), []
 
 # ============================================================================
-# AUDIO MANAGER (Fixed for DOM Updates)
+# AUDIO MANAGER (Fixed with st.empty)
 # ============================================================================
 
 class AudioManager:
@@ -124,21 +124,17 @@ class AudioManager:
             st.error(f"Audio Error for '{text}': {e}")
             return None
 
-    def render_player(self, audio_bytes: bytes, label: str, unique_id: str, word_text: str):
+    def render_player(self, placeholder, audio_bytes: bytes, label: str, unique_id: str, word_text: str):
         """
-        Renders HTML5 audio player. 
-        unique_id: Ensures unique DOM elements.
-        word_text: Passed for debugging verification.
+        Renders HTML5 audio player.
+        placeholder: A st.empty() object to force DOM refresh.
         """
         if not audio_bytes: return
-        
-        # Debug: Show what text is actually being loaded
-        # st.toast(f"Loaded audio: {word_text}") # Uncomment to debug
         
         b64_audio = base64.b64encode(audio_bytes).decode()
         html = f"""
         <div style="background: #f1f3f5; padding: 10px; border-radius: 10px; margin: 10px 0;">
-            <div style="font-size: 0.9rem; color: #495057; margin-bottom: 5px;">🔊 {label}</div>
+            <div style="font-size: 0.9rem; color: #495057; margin-bottom: 5px;">🔊 {label} ({word_text})</div>
             <audio id="audio_{unique_id}" controls style="width: 100%; height: 35px;">
                 <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mpeg">
             </audio>
@@ -154,8 +150,9 @@ class AudioManager:
             </div>
         </div>
         """
-        # CRITICAL FIX: Adding key forces Streamlit to destroy and recreate the DOM element
-        st.markdown(html, unsafe_allow_html=True, key=f"audio_player_{unique_id}")
+        # FIXED: Use placeholder to force DOM refresh. Removed 'key' from markdown.
+        placeholder.empty()
+        placeholder.markdown(html, unsafe_allow_html=True)
 
 # ============================================================================
 # STORY & DATA LOADER
@@ -262,6 +259,7 @@ def load_custom_css(dark_mode: bool):
 
 def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr: AudioManager, storage: StorageManager, profile: UserProfile):
     
+    # Init State
     if 'reader_filename' not in st.session_state or st.session_state['reader_filename'] != story_filename:
         st.session_state.reader_filename = story_filename
         st.session_state.reader_idx = 0
@@ -298,6 +296,9 @@ def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr
 
     word = story_data[idx]
     
+    # FIXED: Create placeholder for audio to force refresh
+    audio_placeholder = st.empty()
+
     # Audio Logic
     audio_bytes = audio_mgr.get_audio_bytes(word.english, slow=True)
     
@@ -310,10 +311,9 @@ def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr
     </div>
     """, unsafe_allow_html=True)
     
-    # Render Player (Passing word.english for debug, and idx for unique ID)
+    # Render Player
     if audio_bytes:
-        # Added word.english as argument to verify
-        audio_mgr.render_player(audio_bytes, "Listen", f"reader_audio_{idx}", word.english)
+        audio_mgr.render_player(audio_placeholder, audio_bytes, "Listen", f"reader_audio_{idx}", word.english)
     
     if st.button("👁️ Show Meaning & Context", use_container_width=True, type="secondary", key="btn_reveal"):
         st.session_state.show_hindi = not st.session_state.show_hindi
@@ -334,7 +334,9 @@ def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr
             sent_audio = audio_mgr.get_audio_bytes(word.example_sentence, slow=False)
             if sent_audio:
                 st.markdown("**🗣️ Sentence Audio:**")
-                audio_mgr.render_player(sent_audio, "Listen to Sentence", f"reader_sent_{idx}", "sentence")
+                # Another placeholder for sentence audio
+                sent_placeholder = st.empty()
+                audio_mgr.render_player(sent_placeholder, sent_audio, "Listen to Sentence", f"reader_sent_{idx}", "sentence")
 
 def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: StorageManager):
     due_words = sorted([w for w in words if w.needs_review], key=lambda x: x.mastery_level)[:10]
@@ -372,9 +374,11 @@ def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: Stor
         """, unsafe_allow_html=True)
     
     with col2:
+        # Flashcard audio placeholder
+        fc_audio_placeholder = st.empty()
         if st.button("🔊 Play", key="fc_play", use_container_width=True):
             audio = audio_mgr.get_audio_bytes(word.english)
-            if audio: audio_mgr.render_player(audio, "Word", f"fc_aud_{st.session_state.fc_idx}", word.english)
+            if audio: audio_mgr.render_player(fc_audio_placeholder, audio, "Word", f"fc_aud_{st.session_state.fc_idx}", word.english)
 
     if not st.session_state.fc_reveal:
         if st.button("Show Answer", use_container_width=True, type="primary"):
@@ -421,8 +425,10 @@ def mode_quiz(words: List[WordData], audio_mgr: AudioManager):
     st.markdown(f"### Question {st.session_state.quiz_q_idx + 1}")
     st.markdown(f"<h2 style='text-align: center;'>{current_q.english}</h2>", unsafe_allow_html=True)
     
+    # Quiz audio placeholder
+    quiz_audio_placeholder = st.empty()
     audio = audio_mgr.get_audio_bytes(current_q.english)
-    if audio: audio_mgr.render_player(audio, "Listen", f"quiz_{st.session_state.quiz_q_idx}", current_q.english)
+    if audio: audio_mgr.render_player(quiz_audio_placeholder, audio, "Listen", f"quiz_{st.session_state.quiz_q_idx}", current_q.english)
 
     correct = current_q.hindi
     options = [correct] + random.sample([w.hindi for w in words if w.hindi != correct], 3)
