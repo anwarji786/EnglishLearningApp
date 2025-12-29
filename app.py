@@ -205,8 +205,9 @@ class AudioManager:
             return None
 
     def create_audio_player(self, audio_bytes: bytes, label: str, audio_id: str):
-        """Create audio player with unlimited looping and Pause/Resume/Stop controls"""
+        """Create audio player with unlimited looping and responsive Pause/Resume/Stop controls"""
         audio_b64 = base64.b64encode(audio_bytes).decode()
+        # Note: Updated flex layout for mobile compatibility (flex: 1 1 40%)
         html = f"""
         <div style="margin: 10px 0; padding: 15px; background: #f0f2f6; border-radius: 10px;">
             <div style="font-weight: bold; margin-bottom: 8px;">🔊 {label}</div>
@@ -214,65 +215,41 @@ class AudioManager:
                 <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mpeg">
                 Your browser does not support the audio element.
             </audio>
-            <div style="display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+            <div style="display: flex; gap: 5px; margin-top: 10px; flex-wrap: wrap;">
                 <button onclick="
                     var audio = document.getElementById('{audio_id}');
                     var status = document.getElementById('{audio_id}_status');
-                    // Reset any existing interval
-                    if (window.{audio_id}_loopInterval) {{
-                        clearInterval(window.{audio_id}_loopInterval);
-                    }}
+                    if (window.{audio_id}_loopInterval) {{ clearInterval(window.{audio_id}_loopInterval); }}
                     window.{audio_id}_paused = false;
-                    // Play immediately on user click (required by browsers)
                     audio.currentTime = 0;
-                    audio.play().catch(function(e) {{
-                        console.error('Play error:', e);
-                        status.innerText = 'Error: ' + e.message;
-                    }});
-                    // Set up loop using ended event
-                    audio.onended = function() {{
-                        if (!window.{audio_id}_paused) {{
-                            audio.currentTime = 0;
-                            audio.play().catch(function(e) {{
-                                console.error('Loop play error:', e);
-                                status.innerText = 'Error: ' + e.message;
-                            }});
-                        }}
-                    }};
-                    status.innerText = '🔁 Unlimited looping...';
-                " style="background: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
-                    ▶️ Loop Unlimited
+                    audio.play().catch(function(e) {{ console.error('Play error:', e); status.innerText = 'Error: ' + e.message; }});
+                    audio.onended = function() {{ if (!window.{audio_id}_paused) {{ audio.currentTime = 0; audio.play(); }} }};
+                    status.innerText = '🔁 Looping...';
+                " style="background: #4CAF50; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; flex: 1 1 40%; font-size: 0.9rem;">
+                    ▶️ Loop
                 </button>
                 <button onclick="
                     window.{audio_id}_paused = true;
                     document.getElementById('{audio_id}_status').innerText = '⏸️ Paused';
-                " style="background: #FF9800; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
+                " style="background: #FF9800; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; flex: 1 1 40%; font-size: 0.9rem;">
                     ⏸️ Pause
                 </button>
                 <button onclick="
                     window.{audio_id}_paused = false;
-                    audio.play().catch(function(e) {{
-                        console.error('Resume error:', e);
-                        document.getElementById('{audio_id}_status').innerText = 'Error: ' + e.message;
-                    }});
-                    document.getElementById('{audio_id}_status').innerText = '🔁 Resumed looping...';
-                " style="background: #2196F3; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
+                    audio.play();
+                    document.getElementById('{audio_id}_status').innerText = '🔁 Resumed...';
+                " style="background: #2196F3; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; flex: 1 1 40%; font-size: 0.9rem;">
                     ▶️ Resume
                 </button>
                 <button onclick="
-                    // Clear loop
-                    audio.onended = null;
-                    var audio = document.getElementById('{audio_id}');
-                    audio.pause();
-                    audio.currentTime = 0;
-                    window.{audio_id}_paused = false;
+                    audio.onended = null; audio.pause(); audio.currentTime = 0; window.{audio_id}_paused = false;
                     document.getElementById('{audio_id}_status').innerText = '⏹️ Stopped';
-                " style="background: #f44336; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; flex: 1;">
+                " style="background: #f44336; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; flex: 1 1 40%; font-size: 0.9rem;">
                     ⏹️ Stop
                 </button>
             </div>
-            <div id="{audio_id}_status" style="margin-top: 8px; padding: 8px; background: white; border-radius: 5px; text-align: center; font-size: 0.9em;">
-                Ready — Click "Loop Unlimited" to start repeating
+            <div id="{audio_id}_status" style="margin-top: 8px; padding: 8px; background: white; border-radius: 5px; text-align: center; font-size: 0.85em;">
+                Ready
             </div>
         </div>
         """
@@ -328,7 +305,7 @@ class LearningEngine:
 # UI COMPONENTS
 # ============================================================================
 def load_css(dark_mode: bool = False):
-    """CSS with dark mode support"""
+    """CSS with dark mode support AND Mobile Responsiveness"""
     theme = {
         "bg": "#1a1a1a" if dark_mode else "#ffffff",
         "text": "#ffffff" if dark_mode else "#000000",
@@ -341,9 +318,11 @@ def load_css(dark_mode: bool = False):
     }
     st.markdown(f"""
     <style>
+    /* Base Styles */
     .stApp {{
         background: {theme["bg"]};
         color: {theme["text"]};
+        overflow-x: hidden; /* Prevent horizontal scroll */
     }}
     .current-word {{
         background: linear-gradient(45deg, {theme["primary"]}, {theme["secondary"]});
@@ -355,21 +334,6 @@ def load_css(dark_mode: bool = False):
         margin: 15px 0;
         display: inline-block;
         box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-    }}
-    .word-button {{
-        font-size: 1.6rem;
-        color: {theme["secondary"]};
-        padding: 15px;
-        margin: 8px;
-        border: 2px solid #ddd;
-        border-radius: 12px;
-        background: {theme["card_bg"]};
-        cursor: pointer;
-        text-align: center;
-    }}
-    .word-button:hover {{
-        background: {theme["secondary"]};
-        color: white;
     }}
     .word-details {{
         background: linear-gradient(135deg, {theme["primary"]} 0%, {theme["secondary"]} 100%);
@@ -477,58 +441,53 @@ def load_css(dark_mode: bool = False):
         margin: 10px 0;
         border: 2px solid {theme["secondary"]};
     }}
-    .audio-title {{
-        font-weight: bold;
-        margin-bottom: 8px;
-        color: {theme["primary"]};
-    }}
-    .audio-controls {{
-        display: flex;
-        gap: 10px;
-        margin-top: 10px;
-    }}
-    .loop-button {{
-        background: linear-gradient(45deg, #4CAF50, #2E7D32);
-        color: white;
-        border: none;
-        padding: 10px 15px;
-        border-radius: 5px;
-        cursor: pointer;
-        flex: 1;
-        font-weight: bold;
-        transition: all 0.3s;
-    }}
-    .loop-button:hover {{
-        background: linear-gradient(45deg, #45a049, #1B5E20);
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }}
-    .stop-button {{
-        background: linear-gradient(45deg, #f44336, #d32f2f);
-        color: white;
-        border: none;
-        padding: 10px 15px;
-        border-radius: 5px;
-        cursor: pointer;
-        flex: 1;
-        font-weight: bold;
-        transition: all 0.3s;
-    }}
-    .stop-button:hover {{
-        background: linear-gradient(45deg, #e53935, #c62828);
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-    }}
-    .audio-status {{
-        margin-top: 8px;
-        padding: 8px;
-        background: white;
-        border-radius: 5px;
-        text-align: center;
-        font-size: 0.9em;
-        color: #2E7D32;
-        font-weight: bold;
-        border: 1px solid #c8e6c9;
+    
+    /* Mobile Specific Fixes */
+    @media (max-width: 768px) {{
+        /* Fix container width */
+        .main .block-container {{
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+            padding-left: 1rem;
+            padding-right: 1rem;
+            max-width: 100%;
+        }}
+        
+        /* Scale down huge fonts */
+        .flashcard h1 {{
+            font-size: 2rem !important;
+            margin-bottom: 0.5rem;
+        }}
+        .flashcard h2 {{
+            font-size: 1.5rem !important;
+        }}
+        .current-word {{
+            font-size: 1.5rem !important;
+            padding: 15px;
+        }}
+        .word-details div {{
+            font-size: 1.2rem !important;
+        }}
+        h1 {{ font-size: 1.5rem !important; }}
+        h2 {{ font-size: 1.2rem !important; }}
+        h3 {{ font-size: 1rem !important; }}
+        
+        /* Adjust stats cards to stack better */
+        .stats-card {{
+            padding: 10px;
+            margin: 5px 0;
+        }}
+        
+        /* Fix audio container overflow */
+        .audio-container {{
+            padding: 10px;
+            overflow-x: hidden;
+        }}
+        
+        /* Make text inputs and selectboxes full width */
+        .stTextInput, .stSelectbox {{
+            width: 100% !important;
+        }}
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -586,28 +545,32 @@ def render_word_details(word: WordData, audio_manager: AudioManager):
     return None
 
 def render_dashboard(profile: UserProfile, words: List[WordData]):
-    """Stats dashboard"""
+    """Stats dashboard - Mobile Friendly (2x2 Grid)"""
     st.markdown("## 📊 Your Learning Dashboard")
     learned = sum(1 for w in words if w.mastery_level >= 0.8)
     avg_mastery = sum(w.mastery_level for w in words) / len(words) if words else 0
     due_today = sum(1 for w in words if w.needs_review)
-    col1, col2, col3, col4 = st.columns(4)
+    
+    # Mobile Friendly: Use 2 columns instead of 4
+    col1, col2 = st.columns(2)
     with col1:
         st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("🔥 Current Streak", f"{profile.streak_days} days")
+        st.metric("🔥 Streak", f"{profile.streak_days} days")
         st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown('<div class="stats-card">', unsafe_allow_html=True)
+        st.metric("📈 Mastery", f"{avg_mastery:.0%}")
+        st.markdown('</div>', unsafe_allow_html=True)
+
     with col2:
         st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("✅ Words Mastered", learned)
+        st.metric("✅ Mastered", learned)
         st.markdown('</div>', unsafe_allow_html=True)
-    with col3:
+        
         st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("📈 Avg Mastery", f"{avg_mastery:.0%}")
+        st.metric("📝 Due Today", due_today)
         st.markdown('</div>', unsafe_allow_html=True)
-    with col4:
-        st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("📝 Due for Review", due_today)
-        st.markdown('</div>', unsafe_allow_html=True)
+
     # Achievements
     achievements = []
     if profile.streak_days >= 7:
@@ -618,8 +581,12 @@ def render_dashboard(profile: UserProfile, words: List[WordData]):
         achievements.append("🎯 Word Champion")
     if achievements:
         st.markdown("### 🏆 Achievements")
-        for badge in achievements:
-            st.markdown(f'<span class="achievement-badge">{badge}</span>', unsafe_allow_html=True)
+        # Use a container to wrap badges
+        with st.container():
+            badge_html = ""
+            for badge in achievements:
+                badge_html += f'<span class="achievement-badge">{badge}</span> '
+            st.markdown(badge_html, unsafe_allow_html=True)
 
 # ============================================================================
 # STORY LOADER - DYNAMIC VERSION
@@ -632,7 +599,7 @@ def load_all_story_files():
     # Remove duplicates and filter out our own data files
     unique_files = list(set(json_files))
     story_files = [f for f in unique_files
-                   if f not in ["progress.json", "stories.json"]
+                   if f not in ["progress.json", "stories.json", "requirements.txt", "README.md", "app.py"]
                    and os.path.exists(f)]
     # Map emojis for words
     word_emojis = {
@@ -1213,148 +1180,98 @@ def main():
     with col3:
         st.metric("✨ Unique Words", len(set(word.english for word in st.session_state.all_words)))
 
-    # IMPORTANT NOTICE
-    st.markdown("""
-    <div class="important-note">
-        🔊 <strong>Unlimited Audio Loop with Pause/Resume/Stop!</strong><br>
-        <strong>NEW:</strong> Use the new controls to loop audio indefinitely!<br>
-        <em>Works with every audio player in the app.</em>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Test Audio
-    st.markdown("### 🎵 Step 1: Test Your Audio")
-    if st.button("🔊 TEST AUDIO - Click Here!", key="test_audio", type="primary", use_container_width=True):
-        st.session_state.test_audio_triggered = True
-    if st.session_state.get('test_audio_triggered', False):
-        test_audio = audio_manager.generate_audio("Hello! Your audio is working perfectly! Click 'Loop Unlimited' to hear it repeat.")
-        if test_audio:
-            audio_manager.create_audio_player(test_audio, "Test Audio", "test_audio_player")
-        st.success("✅ Audio is ready! Use the new Loop/Pause/Stop buttons!")
-
     st.markdown("---")
 
-    # Story selection
-    if 'stories' in st.session_state and st.session_state.stories:
-        story_options = {}
-        for i, s in enumerate(st.session_state.stories):
-            level_emoji = "🟢" if s.get('difficulty', 1) == 1 else "🟡" if s.get('difficulty', 1) == 2 else "🔴"
-            story_options[f"{level_emoji} {s['title']} ({s['hindi_title']}) - {len(s['content'])} words"] = i
-        selected_story = st.selectbox(
-            "Choose a story:",
-            options=list(story_options.keys()),
-            index=st.session_state.get('current_story', 0)
-        )
-        story_idx = story_options[selected_story]
-        st.session_state.current_story = story_idx
-        story = st.session_state.stories[story_idx]
-        st.markdown(f"## 📖 {story['title']} - {story['hindi_title']}")
-        st.markdown(f"**Level:** {story.get('level', 'Beginner')} | **Words:** {len(story['content'])} | **Source:** `{story.get('filename', 'Unknown')}`")
+    # Story Selection
+    story_options = [f"{s['title']} ({s['level']})" for s in st.session_state.stories]
+    
+    # Check if we have a valid index in session state, default to 0
+    if 'selected_story_idx' not in st.session_state:
+        st.session_state.selected_story_idx = 0
+    
+    selected_idx = st.selectbox(
+        "📖 Select a Story to Start:",
+        range(len(story_options)),
+        index=st.session_state.selected_story_idx,
+        format_func=lambda x: story_options[x]
+    )
+    
+    # Update session state if selection changed
+    if selected_idx != st.session_state.selected_story_idx:
+        st.session_state.selected_story_idx = selected_idx
+        # Reset learning state when changing story
+        if 'active_mode' in st.session_state:
+            del st.session_state.active_mode
+        if 'current_word' in st.session_state:
+             st.session_state.current_word = None
 
-        # Display story as complete sentence
-        st.markdown("### 📖 Complete Story:")
-        story_text_english = " ".join([word.english for word in story['content']])
-        story_text_hindi = " ".join([word.hindi for word in story['content']])
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"**English:** {story_text_english}")
-        with col2:
-            st.markdown(f"**Hindi:** {story_text_hindi}")
+    selected_story = st.session_state.stories[selected_idx]
 
-        # Play full story audio
-        if st.button("🎧 Listen to Full Story"):
-            full_audio = audio_manager.generate_audio(story_text_english)
-            if full_audio:
-                audio_id = f"story_{story_idx}"
-                audio_manager.create_audio_player(full_audio, story_text_english, audio_id)
+    st.subheader(f"📖 {selected_story['title']}")
+    st.caption(f"Hindi: {selected_story['hindi_title']} | Level: {selected_story['level']}")
 
+    # Mode Selection
+    st.markdown("### 🎮 Choose Learning Mode")
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        if st.button("🎓 Learn Words", key="learn_btn_main", use_container_width=True):
+            st.session_state.active_mode = 'learning'
+            st.session_state.current_word = 0 # Reset to start
+            st.rerun()
+    with col_b:
+         if st.button("🃏 Flashcards", key="flash_btn_main", use_container_width=True):
+            st.session_state.active_mode = 'flashcards'
+            st.rerun()
+    with col_c:
+         if st.button("❓ Quiz", key="quiz_btn_main", use_container_width=True):
+            st.session_state.active_mode = 'quiz'
+            st.rerun()
+
+    # Content Display based on mode
+    if 'active_mode' in st.session_state:
         st.markdown("---")
+        
+        if st.session_state.active_mode == 'learning':
+            st.info("🎓 **Learning Mode**: Click 'I know this' to mark progress.")
+            
+            current_words = selected_story['content']
+            
+            # Ensure current word index is valid
+            if st.session_state.current_word is None:
+                 st.session_state.current_word = 0
 
-        # Display word grid
-        st.markdown("### 🎯 Click any word to learn:")
-        cols_per_row = 4
-        words = story['content']
-        for global_index, word_data in enumerate(words):
-            row = global_index // cols_per_row
-            col_in_row = global_index % cols_per_row
-            if col_in_row == 0:
-                cols = st.columns(cols_per_row)
-            with cols[col_in_row]:
-                badge = word_data.get_mastery_badge()
-                unique_key = f"word_story{story_idx}_global{global_index}"
-                if st.button(
-                    f"{badge} {word_data.english}",
-                    key=unique_key,
-                    use_container_width=True,
-                    help=f"{word_data.hindi} - {int(word_data.mastery_level * 100)}% mastered"
-                ):
-                    st.session_state.current_word = word_data
+            if st.session_state.current_word < len(current_words):
+                word = current_words[st.session_state.current_word]
+                
+                # Show Progress
+                st.progress((st.session_state.current_word + 1) / len(current_words))
+                st.caption(f"Word {st.session_state.current_word + 1} of {len(current_words)}")
+                
+                result = render_word_details(word, audio_manager)
+                
+                if result is not None:
+                    engine.update_word_mastery(word, result)
+                    storage.save_progress(st.session_state.profile, st.session_state.all_words)
+                    st.session_state.current_word += 1
                     st.rerun()
+            else:
+                st.success("🎉 You have completed this story!")
+                st.balloons()
+                if st.button("🔙 Back to Story Menu"):
+                    del st.session_state.active_mode
+                    st.session_state.current_word = None
+                    st.rerun()
+                    
+        elif st.session_state.active_mode == 'flashcards':
+            st.info("🃏 **Flashcard Mode**: Test your memory!")
+            render_flashcards(selected_story['content'], audio_manager, engine)
+            
+        elif st.session_state.active_mode == 'quiz':
+            st.info("❓ **Quiz Mode**: Multiple choice questions!")
+            render_quiz_session(selected_story['content'], audio_manager, engine)
 
-        # Display selected word
-        if 'current_word' in st.session_state and st.session_state.current_word:
-            word = st.session_state.current_word
-            st.markdown("---")
-            feedback = render_word_details(word, audio_manager)
-            if feedback is not None:
-                engine.update_word_mastery(word, feedback)
-                storage.save_progress(st.session_state.profile, st.session_state.all_words)
-                st.success("Progress saved!")
-                time.sleep(0.5)
-                st.rerun()
-
-    # ============================================================================
-    # ENHANCED SPACED REPETITION REVIEW - 10 ITEMS EACH
-    # ============================================================================
-    st.markdown("---")
-    st.markdown("### 🧠 Smart Review (Spaced Repetition)")
-    review_words = engine.get_spaced_repetition_words(st.session_state.all_words, limit=20)
-    if review_words:
-        st.info(f"📚 {len(review_words)} words due for review!")
-        review_mode = st.radio(
-            "Choose review mode:",
-            ["Flashcards (10 cards per session)", "Quiz (10 questions per session)"],
-            horizontal=True
-        )
-        if review_mode.startswith("Flashcards"):
-            render_flashcards(review_words, audio_manager, engine)
-        else:
-            render_quiz_session(review_words, audio_manager, engine)
-    else:
-        st.success("🎉 No words due for review! Keep learning new words.")
-
-    # Word browser
-    st.markdown("---")
-    with st.expander("📚 Browse All Words (with audio loop)"):
-        search = st.text_input("Search words...")
-        filtered_words = [w for w in st.session_state.all_words
-                          if not search or search.lower() in w.english.lower() or search.lower() in w.hindi.lower()]
-        for i, word in enumerate(sorted(filtered_words, key=lambda w: w.english)):
-            col1, col2, col3, col4 = st.columns([2, 2, 1, 2])
-            with col1:
-                st.markdown(f"**{word.english}** {word.image_hint}")
-            with col2:
-                st.markdown(f"*{word.hindi}*")
-            with col3:
-                st.markdown(f"{int(word.mastery_level * 100)}%")
-            with col4:
-                audio_bytes = audio_manager.generate_audio(word.english)
-                if audio_bytes:
-                    audio_id = f"browse_{word.english}_{i}"
-                    audio_manager.create_audio_player(audio_bytes, word.english, audio_id)
-
-    # Save progress
-    st.markdown("---")
-    if st.button("💾 Save All Progress", use_container_width=True):
-        if 'all_words' in st.session_state:
-            storage.save_progress(st.session_state.profile, st.session_state.all_words)
-            st.success("✅ Progress saved successfully!")
-        else:
-            st.error("No words to save!")
-
-    # Update streak
+    # Auto-save session occasionally or on exit (Streamlit reruns often)
     st.session_state.profile.last_session = datetime.now()
-    st.session_state.profile.streak_days = engine.calculate_streak(st.session_state.profile)
 
 if __name__ == "__main__":
     main()
