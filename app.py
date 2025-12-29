@@ -150,125 +150,152 @@ class AudioManager:
         return html
 
 # ============================================================================
-# STORY & DATA LOADER - FIXED VERSION
+# STORY & DATA LOADER - SIMPLIFIED FIX
 # ============================================================================
 
 def load_stories_from_files():
+    """Load all JSON story files from current directory."""
     stories = []
-    files = glob.glob("*.json")
+    
+    # Look for all JSON files
+    json_files = glob.glob("*.json")
+    
     # Filter out system files
-    files = [f for f in files if os.path.basename(f) not in ["user_data.json", "requirements.txt"]]
+    json_files = [f for f in json_files 
+                  if os.path.basename(f) not in ["user_data.json", "requirements.txt"]]
     
-    # Expanded emoji mapping
-    emoji_map = {
-        "pronoun": "👤", "verb": "🏃", "noun": "📦", "adjective": "🎨", 
-        "article": "🔤", "preposition": "📍", "adverb": "⚡", "conjunction": "🔗",
-        "interjection": "💥", "general": "📝"
+    if not json_files:
+        st.warning("No JSON story files found in current directory.")
+        return stories
+    
+    # Simple emoji mapping for fallback
+    category_emojis = {
+        "noun": "📦", "verb": "🏃", "adjective": "🎨", "adverb": "⚡",
+        "pronoun": "👤", "preposition": "📍", "conjunction": "🔗",
+        "interjection": "💥", "article": "🔤", "general": "📝"
     }
     
-    # Expanded default emojis
-    default_emojis = {
-        # Animals
-        "cat": "🐱", "dog": "🐶", "bird": "🐦", "fish": "🐠", "horse": "🐴", 
-        "cow": "🐮", "sheep": "🐑", "elephant": "🐘", "lion": "🦁", "tiger": "🐯",
-        
-        # Common nouns
-        "house": "🏠", "car": "🚗", "tree": "🌳", "flower": "🌸", "book": "📚",
-        "pen": "🖊️", "ball": "⚽", "food": "🍕", "water": "💧", "sun": "☀️",
-        "moon": "🌙", "star": "⭐", "computer": "💻", "phone": "📱", "clock": "⏰",
-        
-        # Verbs
-        "eat": "🍎", "run": "🏃‍♂️", "jump": "🤸", "sleep": "😴", "read": "📖",
-        "write": "✍️", "swim": "🏊", "play": "🎮", "talk": "💬", "think": "🤔",
-        
-        # Adjectives
-        "happy": "😊", "sad": "😢", "big": "🐘", "small": "🐜", "fast": "⚡",
-        "slow": "🐌", "hot": "🔥", "cold": "❄️", "new": "🆕", "old": "🧓",
-        
-        # Pronouns
-        "i": "👤", "you": "👥", "he": "👨", "she": "👩", "it": "⚫",
-        "we": "👨‍👩‍👧‍👦", "they": "👥",
-        
-        # Common words
-        "hello": "👋", "goodbye": "👋", "yes": "✅", "no": "❌", "please": "🙏",
-        "thank": "🙏", "sorry": "😔", "love": "❤️", "friend": "👫", "family": "👨‍👩‍👧‍👦"
-    }
-
-    for filepath in sorted(files):
+    for file_path in sorted(json_files):
         try:
-            with open(filepath, 'r', encoding='utf-8') as f:
+            with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
             word_list = []
-            for item in data.get("content", []):
-                # Get all fields from JSON
-                eng = item.get("english", "")
-                hindi = item.get("hindi", "")
-                phonetic = item.get("phonetic", "")
-                category = item.get("category", "general").lower()
-                difficulty = item.get("difficulty", 1)
-                example_sentence = item.get("example_sentence", f"This is {eng}.")
-                mnemonic = item.get("mnemonic", f"Think of {eng}")
-                image_hint = item.get("image_hint", "")
-                
-                if not eng:  # Skip empty entries
-                    continue
-                
-                # Clean the English word
-                eng_clean = eng.strip().lower()
-                
-                # Determine emoji - use provided image_hint first, then default emojis, then category-based
-                emoji = ""
-                if image_hint:
-                    emoji = image_hint
-                elif eng_clean in default_emojis:
-                    emoji = default_emojis[eng_clean]
+            
+            # Try different possible structures
+            content = None
+            if isinstance(data, dict):
+                # Check if content is directly in the data
+                if "content" in data:
+                    content = data.get("content", [])
+                elif "words" in data:
+                    content = data.get("words", [])
+                elif "vocabulary" in data:
+                    content = data.get("vocabulary", [])
+                elif "items" in data:
+                    content = data.get("items", [])
                 else:
-                    # Map category to emoji
-                    emoji = emoji_map.get(category, "📝")
-                
-                # Handle common pronouns
-                pronoun_map = {
-                    "i": "pronoun", "you": "pronoun", "he": "pronoun", 
-                    "she": "pronoun", "it": "pronoun", "we": "pronoun", 
-                    "they": "pronoun", "me": "pronoun", "him": "pronoun", 
-                    "her": "pronoun", "us": "pronoun", "them": "pronoun"
-                }
-                
-                if eng_clean in pronoun_map:
-                    category = "pronoun"
-                    if not emoji or emoji == "📝":
-                        emoji = "👤"
-                
-                # Create WordData object
-                w = WordData(
-                    english=eng,
-                    hindi=hindi if hindi else f"हिंदी अनुवाद {eng}",
-                    phonetic=phonetic if phonetic else f"/{eng.lower()}/",
-                    category=category,
-                    difficulty=difficulty,
-                    example_sentence=example_sentence,
-                    mnemonic=mnemonic,
-                    image_hint=emoji
-                )
-                word_list.append(w)
+                    # Maybe the entire file is an array of words
+                    content = data
+            elif isinstance(data, list):
+                # The entire file is an array
+                content = data
+            
+            if not content:
+                st.warning(f"No content found in {file_path}")
+                continue
+            
+            # Process each word/item
+            for item in content:
+                if isinstance(item, dict):
+                    # Get English word - try different possible keys
+                    english = ""
+                    for key in ["english", "English", "word", "Word", "text", "Text", "en", "EN"]:
+                        if key in item:
+                            english = str(item[key])
+                            break
+                    
+                    if not english:
+                        # Try to find any string value that looks like an English word
+                        for key, value in item.items():
+                            if isinstance(value, str) and value.strip() and len(value.strip()) < 50:
+                                english = value.strip()
+                                break
+                    
+                    if not english:
+                        continue  # Skip if no English word found
+                    
+                    # Get Hindi translation
+                    hindi = ""
+                    for key in ["hindi", "Hindi", "translation", "Translation", "hi", "HI", "meaning", "Meaning"]:
+                        if key in item:
+                            hindi = str(item[key])
+                            break
+                    
+                    # Get other fields with fallbacks
+                    phonetic = item.get("phonetic", item.get("pronunciation", f"/{english.lower()}/"))
+                    category = item.get("category", item.get("type", "general")).lower()
+                    difficulty = item.get("difficulty", 1)
+                    example_sentence = item.get("example_sentence", item.get("example", f"This is {english}."))
+                    mnemonic = item.get("mnemonic", item.get("tip", f"Think of {english}"))
+                    
+                    # Get emoji/image hint
+                    image_hint = ""
+                    for key in ["image_hint", "emoji", "icon", "symbol"]:
+                        if key in item:
+                            image_hint = item[key]
+                            break
+                    
+                    if not image_hint:
+                        # Use category-based emoji
+                        image_hint = category_emojis.get(category, "📝")
+                    
+                    # Create WordData object
+                    word = WordData(
+                        english=english.strip(),
+                        hindi=hindi.strip() if hindi else f"Translation for {english}",
+                        phonetic=phonetic,
+                        category=category,
+                        difficulty=difficulty,
+                        example_sentence=example_sentence,
+                        mnemonic=mnemonic,
+                        image_hint=image_hint
+                    )
+                    word_list.append(word)
+            
+            if not word_list:
+                st.warning(f"No valid words found in {file_path}")
+                continue
             
             # Get story metadata
-            title = data.get("title", os.path.basename(filepath).replace(".json", "").replace("_", " ").title())
-            level = data.get("level", "Beginner")
-            description = data.get("description", f"A story about {title}")
+            title = ""
+            if isinstance(data, dict):
+                for key in ["title", "Title", "name", "Name", "story"]:
+                    if key in data:
+                        title = data[key]
+                        break
+            
+            if not title:
+                title = os.path.basename(file_path).replace(".json", "").replace("_", " ").title()
+            
+            level = "Beginner"
+            if isinstance(data, dict):
+                level = data.get("level", data.get("Level", "Beginner"))
             
             stories.append({
-                "filename": filepath,
+                "filename": file_path,
                 "title": title,
                 "level": level,
-                "description": description,
                 "content": word_list
             })
-            print(f"Loaded story: {title} with {len(word_list)} words")
+            
+            print(f"✅ Loaded: {title} from {file_path} with {len(word_list)} words")
+            print(f"   First word: {word_list[0].english if word_list else 'N/A'}")
+            print(f"   All words: {[w.english for w in word_list[:5]]}{'...' if len(word_list) > 5 else ''}")
             
         except Exception as e:
-            print(f"Error loading {filepath}: {e}")
+            st.error(f"Error loading {file_path}: {str(e)}")
+            print(f"❌ Error loading {file_path}: {e}")
             import traceback
             traceback.print_exc()
     
@@ -521,12 +548,16 @@ def main():
     
     load_custom_css(profile.dark_mode)
     
-    stories = load_stories_from_files()
+    # Show loading message
+    with st.spinner("Loading stories..."):
+        stories = load_stories_from_files()
     
     with st.container():
         col_title, col_theme = st.columns([4, 1])
         with col_title:
             st.title("📚 Bilingual Master")
+            if stories:
+                st.caption(f"Loaded {len(stories)} story file(s)")
         with col_theme:
             if st.button("🌙/☀️", help="Toggle Dark Mode"):
                 profile.dark_mode = not profile.dark_mode
@@ -534,7 +565,47 @@ def main():
                 st.rerun()
 
     if not stories:
-        st.error("No JSON story files found. Please upload one.")
+        st.error("""
+        No JSON story files found. 
+        
+        **Please make sure you have JSON files in the same directory as this app.**
+        
+        Example JSON structure:
+        ```json
+        [
+          {
+            "english": "Hello",
+            "hindi": "नमस्ते",
+            "phonetic": "/həˈloʊ/",
+            "category": "greeting",
+            "difficulty": 1,
+            "example_sentence": "Hello, how are you?",
+            "mnemonic": "Think of 'hell' + 'o'",
+            "image_hint": "👋"
+          }
+        ]
+        ```
+        
+        Or as an object with a 'content' key:
+        ```json
+        {
+          "title": "Basic Words",
+          "content": [
+            {
+              "english": "Hello",
+              "hindi": "नमस्ते"
+            }
+          ]
+        }
+        ```
+        """)
+        
+        # Show what files are in the directory
+        st.info("Files in current directory:")
+        files = os.listdir(".")
+        for file in files:
+            st.write(f"- {file}")
+        
         return
 
     with st.sidebar:
@@ -542,14 +613,19 @@ def main():
         st.write(f"Hello, **{profile.name}**!")
         
         st.markdown("### Current Story")
-        sel_idx = st.selectbox("Choose Story:", range(len(stories)), format_func=lambda x: stories[x]['title'])
+        story_titles = [f"{s['title']} ({len(s['content'])} words)" for s in stories]
+        sel_idx = st.selectbox("Choose Story:", range(len(stories)), format_func=lambda x: story_titles[x])
         
-        # Show story info
-        if stories:
-            st.markdown(f"**Level:** {stories[sel_idx]['level']}")
-            st.markdown(f"**Words:** {len(stories[sel_idx]['content'])}")
-            if 'description' in stories[sel_idx]:
-                st.markdown(f"**Description:** {stories[sel_idx]['description']}")
+        # Show debug info
+        if st.checkbox("Show Debug Info", False):
+            st.markdown("### Debug Info")
+            current_story = stories[sel_idx]
+            st.write(f"Filename: {current_story['filename']}")
+            st.write(f"Words loaded: {len(current_story['content'])}")
+            if current_story['content']:
+                st.write("First 5 words:")
+                for i, word in enumerate(current_story['content'][:5]):
+                    st.write(f"{i+1}. {word.english} → {word.hindi}")
         
         if st.button("🔄 Reload Files"):
             st.rerun()
@@ -563,6 +639,7 @@ def main():
                 with open(file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 st.success(f"Uploaded {uploaded_file.name} successfully!")
+                time.sleep(1)
                 st.rerun()
             except Exception as e:
                 st.error(f"Error uploading file: {e}")
@@ -583,31 +660,40 @@ def main():
     tab1, tab2, tab3, tab4 = st.tabs(["📖 Story Reader", "🎴 Flashcards", "🧠 Quiz", "📊 Stats"])
     
     with tab1:
-        st.markdown(f"### Reading: {stories[sel_idx]['title']}")
-        if 'description' in stories[sel_idx]:
-            st.markdown(f"*{stories[sel_idx]['description']}*")
-        mode_story_reader(current_story_words, current_story_filename, audio_mgr, storage, profile)
-        save_current()
+        st.markdown(f"### 📖 Reading: {stories[sel_idx]['title']}")
+        if len(current_story_words) == 0:
+            st.error("No words found in this story!")
+        else:
+            mode_story_reader(current_story_words, current_story_filename, audio_mgr, storage, profile)
+            save_current()
 
     with tab2:
-        mode_flashcards(current_story_words, audio_mgr, storage)
-        save_current()
+        if len(current_story_words) == 0:
+            st.error("No words available for flashcards!")
+        else:
+            mode_flashcards(current_story_words, audio_mgr, storage)
+            save_current()
 
     with tab3:
-        mode_quiz(current_story_words, audio_mgr)
+        if len(current_story_words) < 4:
+            st.error(f"Need at least 4 words for quiz. Current story has {len(current_story_words)} words.")
+        else:
+            mode_quiz(current_story_words, audio_mgr)
 
     with tab4:
         st.header("📊 Learning Progress")
-        learned = sum(1 for w in current_story_words if w.mastery_level >= 0.8)
-        due = sum(1 for w in current_story_words if w.needs_review)
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Words", len(current_story_words))
-        c2.metric("Mastered (80%+)", learned)
-        c3.metric("Due for Review", due)
-        
-        import pandas as pd
-        if current_story_words:
+        if len(current_story_words) == 0:
+            st.error("No words to show statistics for!")
+        else:
+            learned = sum(1 for w in current_story_words if w.mastery_level >= 0.8)
+            due = sum(1 for w in current_story_words if w.needs_review)
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Words", len(current_story_words))
+            c2.metric("Mastered (80%+)", learned)
+            c3.metric("Due for Review", due)
+            
+            import pandas as pd
             df = pd.DataFrame([{"Word": w.english, "Mastery": w.mastery_level} for w in current_story_words])
             st.bar_chart(df.set_index("Word"))
 
