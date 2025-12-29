@@ -79,14 +79,15 @@ class StorageManager:
             profile = UserProfile(**data["profile"])
             words = []
             for w in data["words"]:
-                if w.get('last_reviewed'): w['last_reviewed'] = datetime.fromisoformat(w['last_reviewed'])
+                if w.get('last_reviewed'):
+                    w['last_reviewed'] = datetime.fromisoformat(w['last_reviewed'])
                 words.append(WordData(**w))
             return profile, words
         except FileNotFoundError:
             return UserProfile(), []
 
 # ============================================================================
-# AUDIO MANAGER (Fixed with st.empty)
+# AUDIO MANAGER (High Performance)
 # ============================================================================
 
 class AudioManager:
@@ -95,46 +96,41 @@ class AudioManager:
         self.cache_dir.mkdir(exist_ok=True)
 
     def get_audio_bytes(self, text: str, slow: bool = False) -> Optional[bytes]:
-        """Generate or retrieve audio from cache."""
-        if not text: return None
-        
-        clean_text = text.strip()
-        if not clean_text: return None
+        """Generate or retrieve audio from cache. Ensures text matches audio."""
+        if not text:
+            return None
 
-        # Create unique hash based on content AND speed setting
+        clean_text = text.strip()
+        if not clean_text:
+            return None
+
+        # Create unique hash based ONLY on content and speed
         hash_key = hashlib.md5(f"{clean_text}_{slow}".encode()).hexdigest()
         cache_file = self.cache_dir / f"{hash_key}.mp3"
 
-        # Return from cache if exists
         if cache_file.exists():
             return cache_file.read_bytes()
 
-        # Generate new audio
         try:
             tts = gTTS(text=clean_text, lang="en", slow=slow)
             mp3_fp = io.BytesIO()
             tts.write_to_fp(mp3_fp)
             mp3_fp.seek(0)
             audio_data = mp3_fp.read()
-            
-            # Save to cache
             cache_file.write_bytes(audio_data)
             return audio_data
         except Exception as e:
-            st.error(f"Audio Error for '{text}': {e}")
+            st.error(f"Audio generation failed for '{text}': {e}")
             return None
 
-    def render_player(self, placeholder, audio_bytes: bytes, label: str, unique_id: str, word_text: str):
-        """
-        Renders HTML5 audio player.
-        placeholder: A st.empty() object to force DOM refresh.
-        """
-        if not audio_bytes: return
+    def render_player(self, audio_bytes: bytes, label: str, unique_id: str):
+        if not audio_bytes:
+            return
         
         b64_audio = base64.b64encode(audio_bytes).decode()
         html = f"""
         <div style="background: #f1f3f5; padding: 10px; border-radius: 10px; margin: 10px 0;">
-            <div style="font-size: 0.9rem; color: #495057; margin-bottom: 5px;">🔊 {label} ({word_text})</div>
+            <div style="font-size: 0.9rem; color: #495057; margin-bottom: 5px;">🔊 {label}</div>
             <audio id="audio_{unique_id}" controls style="width: 100%; height: 35px;">
                 <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mpeg">
             </audio>
@@ -150,18 +146,15 @@ class AudioManager:
             </div>
         </div>
         """
-        # FIXED: Use placeholder to force DOM refresh. Removed 'key' from markdown.
-        placeholder.empty()
-        placeholder.markdown(html, unsafe_allow_html=True)
+        st.markdown(html, unsafe_allow_html=True)
 
 # ============================================================================
-# STORY & DATA LOADER
+# STORY & DATA LOADER (FIXED)
 # ============================================================================
 
 def load_stories_from_files():
     stories = []
     files = glob.glob("*.json")
-    # Filter out system files
     files = [f for f in files if os.path.basename(f) not in ["user_data.json", "requirements.txt"]]
     
     emoji_map = {
@@ -177,17 +170,29 @@ def load_stories_from_files():
                 data = json.load(f)
             
             word_list = []
+            seen_words = set()
             for item in data.get("content", []):
-                eng = item.get("english", "")
-                if not eng: continue
-                
-                cat = item.get("category", "general").lower()
-                if "pronoun" in eng.lower() or eng in ["I", "you", "he"]: cat = "pronoun"
-                elif eng in default_emojis: pass
-                else: cat = "noun"
+                eng = item.get("english", "").strip()
+                if not eng:
+                    continue
+                if eng in seen_words:
+                    continue  # Skip duplicates
+                seen_words.add(eng)
 
-                emoji = item.get("image_hint", emoji_map.get(cat, "📝"))
-                if eng.lower() in default_emojis: emoji = default_emojis[eng.lower()]
+                cat = item.get("category", "general").lower()
+                # Improve category detection
+                if eng in ["I", "you", "he", "she", "it", "we", "they"]:
+                    cat = "pronoun"
+                elif eng.lower() in default_emojis:
+                    cat = "noun"
+                else:
+                    cat = "noun"  # safe default
+
+                # Assign emoji
+                if eng.lower() in default_emojis:
+                    emoji = default_emojis[eng.lower()]
+                else:
+                    emoji = emoji_map.get(cat, "📝")
 
                 w = WordData(
                     english=eng,
@@ -202,7 +207,7 @@ def load_stories_from_files():
                 word_list.append(w)
             
             stories.append({
-                "filename": filepath,
+                "filename": os.path.basename(filepath),
                 "title": data.get("title", os.path.basename(filepath)),
                 "level": data.get("level", "Beginner"),
                 "content": word_list
@@ -225,10 +230,20 @@ def load_custom_css(dark_mode: bool):
     
     st.markdown(f"""
     <style>
-        .stApp {{ background-color: {bg}; color: {text}; }}
-        .stTabs [data-baseweb="tab-list"] {{ gap: 10px; }}
-        .stTabs [data-baseweb="tab"] {{ background-color: {card_bg}; border-radius: 10px 10px 0 0; padding: 15px; font-weight: bold; }}
-        
+        .stApp {{
+            background-color: {bg};
+            color: {text};
+        }}
+        .stTabs [data-baseweb="tab-list"] {{
+            gap: 10px;
+        }}
+        .stTabs [data-baseweb="tab"] {{
+            background-color: {card_bg};
+            border-radius: 10px 10px 0 0;
+            padding: 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+        }}
         @media (max-width: 768px) {{
             .stApp {{ padding-top: 0; }}
             .block-container {{ padding: 1rem !important; }}
@@ -237,7 +252,6 @@ def load_custom_css(dark_mode: bool):
             h2 {{ font-size: 1.5rem !important; }}
             button {{ width: 100%; margin-bottom: 5px; }}
         }}
-
         .word-card {{
             background: {card_bg};
             padding: 25px;
@@ -250,6 +264,27 @@ def load_custom_css(dark_mode: bool):
         .english-word {{ font-size: 3rem; font-weight: bold; color: {primary}; margin-bottom: 10px; }}
         .hindi-word {{ font-size: 2.5rem; color: {accent}; margin-bottom: 5px; }}
         .phonetic {{ font-size: 1.2rem; opacity: 0.7; }}
+        .big-btn {{
+            display: inline-block;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            border: none;
+            cursor: pointer;
+            text-align: center;
+            width: 100%;
+            transition: transform 0.1s;
+        }}
+        .big-btn:active {{ transform: scale(0.98); }}
+        .badge {{
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            margin: 0 5px;
+            display: inline-block;
+        }}
+        .badge-know {{ background: #4caf50; color: white; }}
+        .badge-learn {{ background: #ff9800; color: white; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -258,35 +293,24 @@ def load_custom_css(dark_mode: bool):
 # ============================================================================
 
 def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr: AudioManager, storage: StorageManager, profile: UserProfile):
-    
-    # Init State
     if 'reader_filename' not in st.session_state or st.session_state['reader_filename'] != story_filename:
         st.session_state.reader_filename = story_filename
         st.session_state.reader_idx = 0
         st.session_state.show_hindi = False
 
-    if 'reader_idx' not in st.session_state:
-        st.session_state.reader_idx = 0
-        
-    idx = st.session_state.reader_idx
-    
-    # Boundary check
-    if idx >= len(story_data):
-        idx = len(story_data) - 1
-        st.session_state.reader_idx = idx
-    
-    # Navigation
+    idx = min(st.session_state.get('reader_idx', 0), len(story_data) - 1)
+
     col_prev, col_center, col_next = st.columns([1, 3, 1])
     
     with col_prev:
         if st.button("⬅️ Prev", disabled=(idx == 0), use_container_width=True, key="btn_prev"):
-            st.session_state.reader_idx -= 1
+            st.session_state.reader_idx = max(0, st.session_state.reader_idx - 1)
             st.session_state.show_hindi = False
             st.rerun()
             
     with col_next:
         if st.button("Next ➡️", disabled=(idx == len(story_data)-1), use_container_width=True, key="btn_next"):
-            st.session_state.reader_idx += 1
+            st.session_state.reader_idx = min(len(story_data) - 1, st.session_state.reader_idx + 1)
             st.session_state.show_hindi = False
             st.rerun()
 
@@ -296,13 +320,11 @@ def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr
 
     word = story_data[idx]
     
-    # FIXED: Create placeholder for audio to force refresh
-    audio_placeholder = st.empty()
+    # DEBUG: Uncomment to verify current word
+    # st.write(f"DEBUG: Current word = '{word.english}'")
 
-    # Audio Logic
     audio_bytes = audio_mgr.get_audio_bytes(word.english, slow=True)
     
-    # Display Card
     st.markdown(f"""
     <div class="word-card">
         <div style="font-size: 4rem;">{word.image_hint}</div>
@@ -311,9 +333,8 @@ def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr
     </div>
     """, unsafe_allow_html=True)
     
-    # Render Player
     if audio_bytes:
-        audio_mgr.render_player(audio_placeholder, audio_bytes, "Listen", f"reader_audio_{idx}", word.english)
+        audio_mgr.render_player(audio_bytes, "Listen", f"reader_audio_{idx}")
     
     if st.button("👁️ Show Meaning & Context", use_container_width=True, type="secondary", key="btn_reveal"):
         st.session_state.show_hindi = not st.session_state.show_hindi
@@ -334,15 +355,13 @@ def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr
             sent_audio = audio_mgr.get_audio_bytes(word.example_sentence, slow=False)
             if sent_audio:
                 st.markdown("**🗣️ Sentence Audio:**")
-                # Another placeholder for sentence audio
-                sent_placeholder = st.empty()
-                audio_mgr.render_player(sent_placeholder, sent_audio, "Listen to Sentence", f"reader_sent_{idx}", "sentence")
+                audio_mgr.render_player(sent_audio, "Listen to Sentence", f"reader_sent_{idx}")
 
 def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: StorageManager):
     due_words = sorted([w for w in words if w.needs_review], key=lambda x: x.mastery_level)[:10]
     
     if not due_words:
-        st.success("🎉 No words due for review!")
+        st.success("🎉 No words due for review! You are doing great.")
         return
 
     st.subheader(f"📝 Review Session: {len(due_words)} Cards")
@@ -374,11 +393,10 @@ def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: Stor
         """, unsafe_allow_html=True)
     
     with col2:
-        # Flashcard audio placeholder
-        fc_audio_placeholder = st.empty()
         if st.button("🔊 Play", key="fc_play", use_container_width=True):
             audio = audio_mgr.get_audio_bytes(word.english)
-            if audio: audio_mgr.render_player(fc_audio_placeholder, audio, "Word", f"fc_aud_{st.session_state.fc_idx}", word.english)
+            if audio:
+                audio_mgr.render_player(audio, "Word", f"fc_aud_{st.session_state.fc_idx}")
 
     if not st.session_state.fc_reveal:
         if st.button("Show Answer", use_container_width=True, type="primary"):
@@ -406,7 +424,9 @@ def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: Stor
                 st.rerun()
 
 def mode_quiz(words: List[WordData], audio_mgr: AudioManager):
-    if len(words) < 4: return st.info("Need at least 4 words.")
+    if len(words) < 4:
+        st.info("Need at least 4 words to start a quiz.")
+        return
     
     if 'quiz_q_idx' not in st.session_state:
         st.session_state.quiz_questions = random.sample(words, min(10, len(words)))
@@ -425,16 +445,18 @@ def mode_quiz(words: List[WordData], audio_mgr: AudioManager):
     st.markdown(f"### Question {st.session_state.quiz_q_idx + 1}")
     st.markdown(f"<h2 style='text-align: center;'>{current_q.english}</h2>", unsafe_allow_html=True)
     
-    # Quiz audio placeholder
-    quiz_audio_placeholder = st.empty()
     audio = audio_mgr.get_audio_bytes(current_q.english)
-    if audio: audio_mgr.render_player(quiz_audio_placeholder, audio, "Listen", f"quiz_{st.session_state.quiz_q_idx}", current_q.english)
+    if audio:
+        audio_mgr.render_player(audio, "Listen", f"quiz_{st.session_state.quiz_q_idx}")
 
     correct = current_q.hindi
-    options = [correct] + random.sample([w.hindi for w in words if w.hindi != correct], 3)
+    other_options = [w.hindi for w in words if w.hindi != correct]
+    if len(other_options) < 3:
+        other_options.extend(["—"] * (3 - len(other_options)))
+    options = [correct] + random.sample(other_options, 3)
     random.shuffle(options)
 
-    choice = st.radio("Select Meaning:", options)
+    choice = st.radio("Select Meaning:", options, key=f"quiz_choice_{st.session_state.quiz_q_idx}")
     if st.button("Submit", use_container_width=True, type="primary"):
         if choice == correct:
             st.session_state.quiz_score += 1
@@ -459,6 +481,10 @@ def main():
     
     stories = load_stories_from_files()
     
+    if not stories:
+        st.error("No JSON story files found. Please upload one.")
+        st.stop()
+
     with st.container():
         col_title, col_theme = st.columns([4, 1])
         with col_title:
@@ -469,26 +495,21 @@ def main():
                 storage.save(profile, [])
                 st.rerun()
 
-    if not stories:
-        st.error("No JSON story files found. Please upload one.")
-        return
-
     with st.sidebar:
         st.header("Settings")
         st.write(f"Hello, **{profile.name}**!")
         
-        st.markdown("### Current Story")
         sel_idx = st.selectbox("Choose Story:", range(len(stories)), format_func=lambda x: stories[x]['title'])
         
         if st.button("🔄 Reload Files"):
             st.rerun()
 
-        st.markdown("---")
         st.file_uploader("Upload JSON Story", type=["json"], key="uploader")
 
     current_story_words = stories[sel_idx]['content']
     current_story_filename = stories[sel_idx]['filename']
     
+    # Merge saved progress safely
     saved_map = {w.english: w for w in saved_words}
     for w in current_story_words:
         if w.english in saved_map:
@@ -515,17 +536,19 @@ def main():
 
     with tab4:
         st.header("📊 Learning Progress")
+        total = len(current_story_words)
         learned = sum(1 for w in current_story_words if w.mastery_level >= 0.8)
         due = sum(1 for w in current_story_words if w.needs_review)
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("Total Words", len(current_story_words))
+        c1.metric("Total Words", total)
         c2.metric("Mastered (80%+)", learned)
         c3.metric("Due for Review", due)
         
-        import pandas as pd
-        df = pd.DataFrame([{"Word": w.english, "Mastery": w.mastery_level} for w in current_story_words])
-        st.bar_chart(df.set_index("Word"))
+        if total > 0:
+            import pandas as pd
+            df = pd.DataFrame([{"Word": w.english, "Mastery": w.mastery_level} for w in current_story_words])
+            st.bar_chart(df.set_index("Word"))
 
 if __name__ == "__main__":
     main()
