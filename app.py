@@ -2,65 +2,24 @@ import streamlit as st
 import json
 import time
 import random
+import uuid
 from pathlib import Path
 from gtts import gTTS
 import io
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Any, Tuple
 import hashlib
-from datetime import datetime, timedelta
-import pandas as pd
-import os
+from datetime import datetime
 import glob
+import os
 import base64
 
 # ============================================================================
-# SIMPLIFIED CONFIGURATION
+# CONFIGURATION & MODELS
 # ============================================================================
-class AppConfig:
-    """Simple configuration without YAML dependency"""
-    def __init__(self):
-        self.config = {
-            "app": {
-                "name": "Bilingual English Master",
-                "version": "1.0.0",
-                "debug": False,
-            },
-            "learning": {
-                "daily_word_limit": 20,
-                "review_limit": 10,
-                "mastery_threshold": 0.8,
-                "streak_reset_days": 2,
-                "initial_difficulty": 1,
-                "max_difficulty": 5
-            },
-            "audio": {
-                "cache_ttl_days": 7,
-                "slow_speed": True,
-                "default_language": "en"
-            }
-        }
 
-    def get(self, key: str, default: Any = None) -> Any:
-        """Get configuration value"""
-        keys = key.split('.')
-        value = self.config
-        for k in keys:
-            if isinstance(value, dict) and k in value:
-                value = value[k]
-            else:
-                return default
-        return value
-
-# Initialize config
-config = AppConfig()
-
-# ============================================================================
-# DATA MODELS
-# ============================================================================
 @dataclass
 class WordData:
-    """Word data structure"""
     english: str
     hindi: str
     phonetic: str
@@ -75,1044 +34,681 @@ class WordData:
 
     @property
     def needs_review(self) -> bool:
-        """Spaced repetition logic"""
         if not self.last_reviewed:
             return True
         days_since = (datetime.now() - self.last_reviewed).days
-        if self.review_count == 0:
-            interval = 1
-        elif self.review_count == 1:
-            interval = 2
-        else:
-            interval = min(int(self.review_count ** 1.3), 365)
+        interval = max(1, int(self.review_count ** 1.5))
         return days_since >= interval
 
-    def get_mastery_badge(self) -> str:
-        """Get emoji badge based on mastery level"""
-        if self.mastery_level >= 0.9:
-            return "💎"
-        elif self.mastery_level >= 0.7:
-            return "🟢"
-        elif self.mastery_level >= 0.5:
-            return "🟡"
-        elif self.mastery_level >= 0.3:
-            return "🟠"
+    def update_mastery(self, correct: bool):
+        self.review_count += 1
+        self.last_reviewed = datetime.now()
+        if correct:
+            self.mastery_level = min(1.0, self.mastery_level + 0.15)
         else:
-            return "🔴"
+            self.mastery_level = max(0.0, self.mastery_level - 0.1)
 
 @dataclass
 class UserProfile:
-    """User progress and preferences"""
-    name: str
-    total_words_learned: int = 0
-    streak_days: int = 0
-    last_session: Optional[datetime] = None
-    preferred_difficulty: int = 1
-    auto_play_audio: bool = False
+    name: str = "Learner"
     dark_mode: bool = False
-    learning_pace: str = "normal"
+    auto_play_story: bool = False
     daily_goal: int = 10
 
-    def to_dict(self) -> Dict:
-        data = asdict(self)
-        if data['last_session']:
-            data['last_session'] = data['last_session'].isoformat()
-        return data
-
-    @classmethod
-    def from_dict(cls, data: Dict):
-        if data.get('last_session'):
-            data['last_session'] = datetime.fromisoformat(data['last_session'])
-        return cls(**data)
-
 # ============================================================================
-# STORAGE MANAGER
+# STORAGE & ENGINE
 # ============================================================================
-class LearningStorage:
-    """Handles all data persistence"""
+
+class StorageManager:
     def __init__(self):
         self.data_dir = Path("learning_data")
         self.data_dir.mkdir(exist_ok=True)
-
-    def save_progress(self, profile: UserProfile, words: List[WordData]):
-        """Save user progress and word mastery"""
-        progress = {
-            "profile": profile.to_dict(),
-            "words": [asdict(word) for word in words],
+    
+    def save(self, profile: UserProfile, all_words: List[WordData]):
+        data = {
+            "profile": asdict(profile),
+            "words": [asdict(w) for w in all_words],
             "timestamp": datetime.now().isoformat()
         }
-        with open(self.data_dir / "progress.json", "w", encoding="utf-8") as f:
-            json.dump(progress, f, indent=2, default=str)
+        with open(self.data_dir / "user_data.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, default=str)
 
-    def load_progress(self) -> Tuple[Optional[UserProfile], List[WordData]]:
-        """Load saved progress"""
+    def load(self) -> Tuple[UserProfile, List[WordData]]:
         try:
-            with open(self.data_dir / "progress.json", "r", encoding="utf-8") as f:
+            with open(self.data_dir / "user_data.json", "r", encoding="utf-8") as f:
                 data = json.load(f)
-            profile = UserProfile.from_dict(data["profile"])
+            profile = UserProfile(**data["profile"])
             words = []
-            for word_dict in data["words"]:
-                if word_dict.get('last_reviewed'):
-                    word_dict['last_reviewed'] = datetime.fromisoformat(word_dict['last_reviewed'])
-                words.append(WordData(**word_dict))
+            for w in data["words"]:
+                if w.get('last_reviewed'): w['last_reviewed'] = datetime.fromisoformat(w['last_reviewed'])
+                words.append(WordData(**w))
             return profile, words
         except FileNotFoundError:
-            return None, []
-
-    def save_stories(self, stories: List[Dict]):
-        """Save custom stories"""
-        with open(self.data_dir / "stories.json", "w", encoding="utf-8") as f:
-            json.dump(stories, f, indent=2, default=str)
-
-    def load_stories(self) -> List[Dict]:
-        """Load all stories"""
-        try:
-            with open(self.data_dir / "stories.json", "r", encoding="utf-8") as f:
-                return json.load(f)
-        except FileNotFoundError:
-            return []
+            return UserProfile(), []
 
 # ============================================================================
-# SIMPLIFIED AUDIO MANAGER (NO LOOP / PAUSE / STOP)
+# AUDIO MANAGER
 # ============================================================================
+
 class AudioManager:
-    """Handles all audio operations with standard player only"""
     def __init__(self):
         self.cache_dir = Path("audio_cache")
         self.cache_dir.mkdir(exist_ok=True)
 
-    def _get_cache_key(self, text: str, slow: bool) -> str:
-        key_string = f"{text}_{slow}"
-        return hashlib.md5(key_string.encode()).hexdigest()
+    def get_audio_bytes(self, text: str, slow: bool = False) -> Optional[bytes]:
+        """Generate or retrieve audio from cache."""
+        if not text: return None
+        
+        clean_text = text.strip()
+        if not clean_text: return None
 
-    def generate_audio(self, text: str, slow: bool = True):
-        if not text or text.strip() == ".":
-            return None
-        cache_key = self._get_cache_key(text, slow)
-        cache_file = self.cache_dir / f"{cache_key}.mp3"
+        hash_key = hashlib.md5(f"{clean_text}_{slow}".encode()).hexdigest()
+        cache_file = self.cache_dir / f"{hash_key}.mp3"
+
         if cache_file.exists():
             return cache_file.read_bytes()
+
         try:
-            tts = gTTS(text=text, lang="en", slow=slow)
-            audio_bytes = io.BytesIO()
-            tts.write_to_fp(audio_bytes)
-            audio_bytes.seek(0)
-            audio_data = audio_bytes.read()
+            tts = gTTS(text=clean_text, lang="en", slow=slow)
+            mp3_fp = io.BytesIO()
+            tts.write_to_fp(mp3_fp)
+            mp3_fp.seek(0)
+            audio_data = mp3_fp.read()
+            
             cache_file.write_bytes(audio_data)
             return audio_data
         except Exception as e:
-            st.error(f"Audio generation failed: {e}")
+            st.error(f"Audio Error for '{text}': {e}")
             return None
 
-    def create_audio_player(self, audio_bytes: bytes, label: str, audio_id: str):
-        """Create standard HTML5 audio player with basic controls only"""
-        audio_b64 = base64.b64encode(audio_bytes).decode()
+    def render_player(self, audio_bytes: bytes, word_text: str) -> str:
+        """Returns HTML for audio player."""
+        if not audio_bytes: return ""
+        
+        unique_id = f"audio_{uuid.uuid4().hex[:8]}"
+        b64_audio = base64.b64encode(audio_bytes).decode()
+        
         html = f"""
-        <div style="margin: 10px 0; padding: 15px; background: #f0f2f6; border-radius: 10px;">
-            <div style="font-weight: bold; margin-bottom: 8px;">🔊 {label}</div>
-            <audio controls style="width: 100%;">
-                <source src="data:audio/mp3;base64,{audio_b64}" type="audio/mpeg">
+        <div style="background: #f1f3f5; padding: 15px; border-radius: 10px; margin: 15px 0; border: 1px solid #dee2e6;">
+            <div style="font-size: 1.1rem; color: #333; margin-bottom: 10px; font-weight: bold;">
+                🔊 Listen to: <span style="color:#666; font-weight:normal;">"{word_text}"</span>
+            </div>
+            <audio id="{unique_id}" controls style="width: 100%; height: 40px; margin-bottom: 10px;">
+                <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mpeg">
                 Your browser does not support the audio element.
             </audio>
         </div>
         """
-        st.markdown(html, unsafe_allow_html=True)
-
-    def clear_cache(self):
-        for file in self.cache_dir.glob("*.mp3"):
-            try:
-                file.unlink()
-            except Exception:
-                pass
-        st.success("Audio cache cleared!")
+        return html
 
 # ============================================================================
-# LEARNING ENGINE
+# SIMPLE STORY LOADER - FIXED VERSION
 # ============================================================================
-class LearningEngine:
-    """Core learning logic"""
-    def __init__(self):
-        self.storage = LearningStorage()
-        self.audio_manager = AudioManager()
 
-    def get_spaced_repetition_words(self, words: List[WordData], limit: int = 20) -> List[WordData]:
-        """Get words due for review using spaced repetition"""
-        review_words = [w for w in words if w.needs_review]
-        review_words.sort(key=lambda w: w.mastery_level)
-        return review_words[:limit]
-
-    def update_word_mastery(self, word: WordData, correct: bool):
-        """Update mastery level based on performance"""
-        word.review_count += 1
-        word.last_reviewed = datetime.now()
-        if correct:
-            word.mastery_level = min(1.0, word.mastery_level + 0.2)
-        else:
-            word.mastery_level = max(0.0, word.mastery_level - 0.1)
-
-    def calculate_streak(self, profile: UserProfile) -> int:
-        """Calculate learning streak"""
-        if not profile.last_session:
-            return 0
-        last_date = profile.last_session.date()
-        current_date = datetime.now().date()
-        days_diff = (current_date - last_date).days
-        if days_diff == 0:
-            return profile.streak_days
-        elif days_diff == 1:
-            return profile.streak_days + 1
-        else:
-            return 0
+def load_stories_from_files():
+    """Load all JSON story files."""
+    stories = []
+    
+    # Look for JSON files
+    json_files = glob.glob("*.json")
+    
+    # Filter out system files
+    json_files = [f for f in json_files 
+                  if os.path.basename(f) not in ["user_data.json", "requirements.txt"]]
+    
+    print(f"Found JSON files: {json_files}")
+    
+    for file_path in sorted(json_files):
+        try:
+            print(f"\n=== Loading {file_path} ===")
+            
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            word_list = []
+            
+            # Print raw data structure for debugging
+            print(f"Raw data type: {type(data)}")
+            print(f"Raw data keys (if dict): {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
+            
+            # Get the content array
+            content = None
+            if isinstance(data, dict):
+                # Try to find the content array
+                for key in ["content", "words", "vocabulary", "items", "data"]:
+                    if key in data:
+                        content = data[key]
+                        print(f"Found content in key: {key}")
+                        break
+                
+                # If still no content, maybe the dict itself is the only item
+                if content is None:
+                    # Check if this dict looks like a word item
+                    if "english" in data or "English" in data or "word" in data:
+                        content = [data]  # Wrap it in a list
+                        print("Treating entire file as a single word item")
+            elif isinstance(data, list):
+                content = data
+                print("File is a list of items")
+            
+            if content is None:
+                print(f"WARNING: No content found in {file_path}")
+                continue
+            
+            print(f"Content type: {type(content)}, length: {len(content) if hasattr(content, '__len__') else 'N/A'}")
+            
+            # Process each item
+            for i, item in enumerate(content):
+                try:
+                    if not isinstance(item, dict):
+                        print(f"  Item {i} is not a dict: {type(item)}")
+                        continue
+                    
+                    # Get English word
+                    english = ""
+                    if "english" in item:
+                        english = str(item["english"]).strip()
+                    elif "English" in item:
+                        english = str(item["English"]).strip()
+                    elif "word" in item:
+                        english = str(item["word"]).strip()
+                    elif "text" in item:
+                        english = str(item["text"]).strip()
+                    elif "en" in item:
+                        english = str(item["en"]).strip()
+                    
+                    if not english:
+                        print(f"  Item {i}: No English word found, skipping")
+                        continue
+                    
+                    print(f"  Processing word {i}: '{english}'")
+                    
+                    # Get Hindi translation
+                    hindi = ""
+                    for key in ["hindi", "Hindi", "translation", "meaning", "hi"]:
+                        if key in item:
+                            hindi = str(item[key]).strip()
+                            break
+                    
+                    if not hindi:
+                        hindi = f"Translation for {english}"
+                    
+                    # Get other fields with defaults
+                    phonetic = item.get("phonetic", item.get("pronunciation", f"/{english.lower()}/"))
+                    category = item.get("category", item.get("type", "general")).lower()
+                    difficulty = item.get("difficulty", 1)
+                    example_sentence = item.get("example_sentence", item.get("example", f"This is {english}."))
+                    mnemonic = item.get("mnemonic", item.get("tip", f"Remember: {english}"))
+                    
+                    # Get emoji
+                    emoji_keys = ["image_hint", "emoji", "icon", "symbol", "image"]
+                    image_hint = "📝"
+                    for key in emoji_keys:
+                        if key in item:
+                            image_hint = item[key]
+                            break
+                    
+                    # Create word
+                    word = WordData(
+                        english=english,
+                        hindi=hindi,
+                        phonetic=phonetic,
+                        category=category,
+                        difficulty=difficulty,
+                        example_sentence=example_sentence,
+                        mnemonic=mnemonic,
+                        image_hint=image_hint
+                    )
+                    word_list.append(word)
+                    
+                except Exception as e:
+                    print(f"  Error processing item {i}: {e}")
+            
+            if not word_list:
+                print(f"WARNING: No valid words created from {file_path}")
+                continue
+            
+            print(f"Successfully created {len(word_list)} words")
+            
+            # Get title
+            title = ""
+            if isinstance(data, dict):
+                title = data.get("title", data.get("name", os.path.basename(file_path).replace(".json", "").title()))
+            else:
+                title = os.path.basename(file_path).replace(".json", "").replace("_", " ").title()
+            
+            level = "Beginner"
+            if isinstance(data, dict):
+                level = data.get("level", "Beginner")
+            
+            stories.append({
+                "filename": file_path,
+                "title": f"{title} ({len(word_list)} words)",
+                "level": level,
+                "content": word_list
+            })
+            
+            print(f"✅ Added story: {title} with {len(word_list)} words")
+            
+        except Exception as e:
+            print(f"❌ ERROR loading {file_path}: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    return stories
 
 # ============================================================================
 # UI COMPONENTS
 # ============================================================================
-def load_css(dark_mode: bool = False):
-    """CSS with dark mode support"""
-    theme = {
-        "bg": "#1a1a1a" if dark_mode else "#ffffff",
-        "text": "#ffffff" if dark_mode else "#000000",
-        "primary": "#6a11cb",
-        "secondary": "#2575fc",
-        "accent": "#ff6b6b",
-        "success": "#51cf66",
-        "warning": "#ffd43b",
-        "card_bg": "#2d2d2d" if dark_mode else "#f8f9fa"
-    }
+
+def load_custom_css(dark_mode: bool):
+    bg = "#121212" if dark_mode else "#ffffff"
+    text = "#e0e0e0" if dark_mode else "#333333"
+    card_bg = "#1e1e1e" if dark_mode else "#f8f9fa"
+    primary = "#6200ea" if dark_mode else "#4f46e5"
+    accent = "#03dac6" if dark_mode else "#0ea5e9"
+    
     st.markdown(f"""
     <style>
-    .stApp {{
-        background: {theme["bg"]};
-        color: {theme["text"]};
-    }}
-    .current-word {{
-        background: linear-gradient(45deg, {theme["primary"]}, {theme["secondary"]});
-        color: white;
-        padding: 20px;
-        border-radius: 15px;
-        font-size: 2.5rem;
-        font-weight: bold;
-        margin: 15px 0;
-        display: inline-block;
-        box-shadow: 0 6px 20px rgba(0,0,0,0.2);
-    }}
-    .word-button {{
-        font-size: 1.6rem;
-        color: {theme["secondary"]};
-        padding: 15px;
-        margin: 8px;
-        border: 2px solid #ddd;
-        border-radius: 12px;
-        background: {theme["card_bg"]};
-        cursor: pointer;
-        text-align: center;
-    }}
-    .word-button:hover {{
-        background: {theme["secondary"]};
-        color: white;
-    }}
-    .word-details {{
-        background: linear-gradient(135deg, {theme["primary"]} 0%, {theme["secondary"]} 100%);
-        color: white;
-        padding: 25px;
-        border-radius: 20px;
-        margin: 20px 0;
-        text-align: center;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.15);
-    }}
-    .important-note {{
-        background: {theme["warning"]};
-        color: black;
-        padding: 20px;
-        border-radius: 15px;
-        margin: 20px 0;
-        border: 4px solid {theme["accent"]};
-        font-weight: bold;
-    }}
-    .mnemonic-box {{
-        background: linear-gradient(45deg, #ff9a9e, #fecfef);
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
-        border-left: 5px solid {theme["accent"]};
-    }}
-    .progress-bar {{
-        height: 30px;
-        background: {theme["card_bg"]};
-        border-radius: 15px;
-        overflow: hidden;
-        margin: 10px 0;
-    }}
-    .progress-fill {{
-        height: 100%;
-        background: linear-gradient(90deg, {theme["success"]}, #20c997);
-        transition: width 0.5s ease;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: bold;
-    }}
-    .achievement-badge {{
-        background: linear-gradient(45deg, #ffd43b, #fab005);
-        color: black;
-        padding: 10px 20px;
-        border-radius: 25px;
-        display: inline-block;
-        margin: 5px;
-        font-weight: bold;
-    }}
-    .stats-card {{
-        background: {theme["card_bg"]};
-        padding: 20px;
-        border-radius: 15px;
-        margin: 10px 0;
-        border: 2px solid {theme["secondary"]};
-    }}
-    .flashcard {{
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 40px;
-        border-radius: 20px;
-        margin: 20px 0;
-        text-align: center;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-        min-height: 300px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-    }}
-    .quiz-question {{
-        background: #f8f9fa;
-        padding: 25px;
-        border-radius: 15px;
-        margin: 15px 0;
-        border-left: 5px solid {theme["primary"]};
-    }}
-    .quiz-option {{
-        padding: 15px;
-        margin: 10px 0;
-        border-radius: 10px;
-        border: 2px solid #ddd;
-        cursor: pointer;
-        transition: all 0.3s;
-    }}
-    .quiz-option:hover {{
-        background: {theme["primary"]}15;
-        border-color: {theme["primary"]};
-    }}
-    .quiz-option.correct {{
-        background: #d4edda;
-        border-color: #28a745;
-    }}
-    .quiz-option.incorrect {{
-        background: #f8d7da;
-        border-color: #dc3545;
-    }}
-    .audio-container {{
-        background: linear-gradient(45deg, #e3f2fd, #bbdefb);
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px 0;
-        border: 2px solid {theme["secondary"]};
-    }}
-    .audio-title {{
-        font-weight: bold;
-        margin-bottom: 8px;
-        color: {theme["primary"]};
-    }}
+        .stApp {{ background-color: {bg}; color: {text}; }}
+        .stTabs [data-baseweb="tab-list"] {{ gap: 10px; }}
+        .stTabs [data-baseweb="tab"] {{ background-color: {card_bg}; border-radius: 10px 10px 0 0; padding: 15px; font-weight: bold; }}
+        
+        @media (max-width: 768px) {{
+            .stApp {{ padding-top: 0; }}
+            .block-container {{ padding: 1rem !important; }}
+            .stMarkdown {{ font-size: 110%; }}
+            h1 {{ font-size: 1.8rem !important; }}
+            h2 {{ font-size: 1.5rem !important; }}
+            button {{ width: 100%; margin-bottom: 5px; }}
+        }}
+
+        .word-card {{
+            background: {card_bg};
+            padding: 25px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+            border: 2px solid {primary};
+        }}
+        .english-word {{ font-size: 3rem; font-weight: bold; color: {primary}; margin-bottom: 10px; }}
+        .hindi-word {{ font-size: 2.5rem; color: {accent}; margin-bottom: 5px; }}
+        .phonetic {{ font-size: 1.2rem; opacity: 0.7; }}
     </style>
     """, unsafe_allow_html=True)
 
-def render_word_details(word: WordData, audio_manager: AudioManager):
-    """Word details display with standard audio player"""
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        st.markdown(f'<div class="word-details">', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size: 3rem;">{word.image_hint} {word.english}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size: 2.5rem;">{word.hindi}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size: 1.5rem;">[{word.phonetic}]</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        # Mnemonic
-        st.markdown('<div class="mnemonic-box">', unsafe_allow_html=True)
-        st.markdown(f"**💡 Memory Tip:** {word.mnemonic}")
-        st.markdown('</div>', unsafe_allow_html=True)
-        # Example sentence
-        st.info(f"**Example:** {word.example_sentence}")
-        # Progress bar
-        st.markdown(f"**Mastery:** {int(word.mastery_level * 100)}%")
+# ============================================================================
+# APP LOGIC MODES
+# ============================================================================
+
+def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr: AudioManager):
+    
+    # Init State
+    if 'reader_filename' not in st.session_state or st.session_state['reader_filename'] != story_filename:
+        st.session_state.reader_filename = story_filename
+        st.session_state.reader_idx = 0
+        st.session_state.show_hindi = False
+
+    if 'reader_idx' not in st.session_state:
+        st.session_state.reader_idx = 0
+        
+    idx = st.session_state.reader_idx
+    
+    # Boundary check
+    if idx >= len(story_data):
+        idx = len(story_data) - 1
+        st.session_state.reader_idx = idx
+    
+    if len(story_data) == 0:
+        st.warning("No words found in this story.")
+        return
+    
+    # Navigation
+    col_prev, col_center, col_next = st.columns([1, 3, 1])
+    
+    with col_prev:
+        if st.button("⬅️ Prev", disabled=(idx == 0), use_container_width=True, key=f"btn_prev_{idx}"):
+            st.session_state.reader_idx -= 1
+            st.session_state.show_hindi = False
+            st.rerun()
+            
+    with col_next:
+        if st.button("Next ➡️", disabled=(idx == len(story_data)-1), use_container_width=True, key=f"btn_next_{idx}"):
+            st.session_state.reader_idx += 1
+            st.session_state.show_hindi = False
+            st.rerun()
+
+    with col_center:
+        st.progress((idx + 1) / len(story_data))
+        st.caption(f"Word {idx+1} of {len(story_data)}")
+
+    word = story_data[idx]
+    
+    # Display Card
+    st.markdown(f"""
+    <div class="word-card">
+        <div style="font-size: 4rem;">{word.image_hint}</div>
+        <div class="english-word">{word.english}</div>
+        <div class="phonetic">{word.phonetic}</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Audio
+    audio_bytes = audio_mgr.get_audio_bytes(word.english, slow=True)
+    if audio_bytes:
+        audio_html = audio_mgr.render_player(audio_bytes, word.english)
+        st.markdown(audio_html, unsafe_allow_html=True)
+    
+    if st.button("👁️ Show Meaning & Context", use_container_width=True, type="secondary", key=f"btn_reveal_{idx}"):
+        st.session_state.show_hindi = not st.session_state.show_hindi
+        st.rerun()
+        
+    if st.session_state.show_hindi:
         st.markdown(f"""
-        <div class="progress-bar">
-            <div class="progress-fill" style="width: {word.mastery_level * 100}%">
-                {int(word.mastery_level * 100)}%
+        <div style="text-align: center; background: rgba(0,0,0,0.05); padding: 15px; border-radius: 10px;">
+            <div class="hindi-word">{word.hindi}</div>
+            <p style="font-style: italic; margin-top: 10px;">{word.example_sentence}</p>
+            <div style="background: #e1f5fe; color: #0277bd; padding: 10px; border-radius: 5px; margin-top:10px;">
+                💡 <strong>Tip:</strong> {word.mnemonic}
             </div>
         </div>
         """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("### 🎧 Listen")
-        # Generate audio for word
-        audio_bytes = audio_manager.generate_audio(word.english)
-        if audio_bytes:
-            audio_id = f"word_{word.english}_{hash(word.english) % 1000}"
-            audio_manager.create_audio_player(audio_bytes, word.english, audio_id)
-        # Sentence audio
+        
         if word.example_sentence:
-            st.markdown("**Sentence:**")
-            sent_audio = audio_manager.generate_audio(word.example_sentence, slow=False)
+            sent_audio = audio_mgr.get_audio_bytes(word.example_sentence, slow=False)
             if sent_audio:
-                sent_id = f"sentence_{hash(word.example_sentence) % 1000}"
-                audio_manager.create_audio_player(sent_audio, word.example_sentence, sent_id)
-    # Review buttons
-    st.markdown("---")
-    st.markdown("**Rate your knowledge:**")
-    col_btn1, col_btn2 = st.columns(2)
-    word_hash = hash(word.english + word.hindi) % 100000
-    with col_btn1:
-        if st.button("✅ I know this", key=f"know_{word.english}_{word_hash}", use_container_width=True):
-            return True
-    with col_btn2:
-        if st.button("❌ Need practice", key=f"dontknow_{word.english}_{word_hash}", use_container_width=True):
-            return False
-    return None
+                st.markdown("**🗣️ Sentence Audio:**")
+                sent_html = audio_mgr.render_player(sent_audio, word.example_sentence)
+                st.markdown(sent_html, unsafe_allow_html=True)
 
-def render_dashboard(profile: UserProfile, words: List[WordData]):
-    """Stats dashboard"""
-    st.markdown("## 📊 Your Learning Dashboard")
-    learned = sum(1 for w in words if w.mastery_level >= 0.8)
-    avg_mastery = sum(w.mastery_level for w in words) / len(words) if words else 0
-    due_today = sum(1 for w in words if w.needs_review)
-    col1, col2, col3, col4 = st.columns(4)
+def mode_flashcards(words: List[WordData], audio_mgr: AudioManager):
+    if len(words) < 1:
+        st.info("No words available for flashcards.")
+        return
+    
+    due_words = sorted([w for w in words if w.needs_review], key=lambda x: x.mastery_level)[:10]
+    
+    if not due_words:
+        st.success("🎉 No words due for review!")
+        return
+
+    st.subheader(f"📝 Review Session: {len(due_words)} Cards")
+    
+    if 'fc_idx' not in st.session_state:
+        st.session_state.fc_idx = 0
+        st.session_state.fc_reveal = False
+
+    if st.session_state.fc_idx >= len(due_words):
+        st.balloons()
+        st.success("Session Complete!")
+        if st.button("Start New Session"):
+            st.session_state.fc_idx = 0
+            st.session_state.fc_reveal = False
+            st.rerun()
+        return
+
+    word = due_words[st.session_state.fc_idx]
+    
+    col1, col2 = st.columns([2, 1])
     with col1:
-        st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("🔥 Current Streak", f"{profile.streak_days} days")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="word-card" style="min-height: 200px; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+            <div class="english-word">{word.english}</div>
+            <div style="font-size: 2rem;">{word.image_hint}</div>
+            {f'<div class="hindi-word">{word.hindi}</div>' if st.session_state.fc_reveal else ''}
+        </div>
+        """, unsafe_allow_html=True)
+    
     with col2:
-        st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("✅ Words Mastered", learned)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with col3:
-        st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("📈 Avg Mastery", f"{avg_mastery:.0%}")
-        st.markdown('</div>', unsafe_allow_html=True)
-    with col4:
-        st.markdown('<div class="stats-card">', unsafe_allow_html=True)
-        st.metric("📝 Due for Review", due_today)
-        st.markdown('</div>', unsafe_allow_html=True)
+        if st.button("🔊 Play", key=f"fc_play_{st.session_state.fc_idx}", use_container_width=True):
+            audio_bytes = audio_mgr.get_audio_bytes(word.english)
+            if audio_bytes:
+                audio_html = audio_mgr.render_player(audio_bytes, word.english)
+                st.markdown(audio_html, unsafe_allow_html=True)
 
-    # Achievements
-    achievements = []
-    if profile.streak_days >= 7:
-        achievements.append("🔥 Week Warrior")
-    if profile.streak_days >= 30:
-        achievements.append("📅 Monthly Master")
-    if learned >= 50:
-        achievements.append("🎯 Word Champion")
-    if achievements:
-        st.markdown("### 🏆 Achievements")
-        for badge in achievements:
-            st.markdown(f'<span class="achievement-badge">{badge}</span>', unsafe_allow_html=True)
+    if not st.session_state.fc_reveal:
+        if st.button("Show Answer", use_container_width=True, type="primary", key=f"fc_reveal_{st.session_state.fc_idx}"):
+            st.session_state.fc_reveal = True
+            st.rerun()
+    else:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("❌ Hard", use_container_width=True, key=f"fc_hard_{st.session_state.fc_idx}"):
+                word.update_mastery(False)
+                st.session_state.fc_idx += 1
+                st.session_state.fc_reveal = False
+                st.rerun()
+        with c2:
+            if st.button("🟡 Good", use_container_width=True, key=f"fc_good_{st.session_state.fc_idx}"):
+                word.update_mastery(True)
+                st.session_state.fc_idx += 1
+                st.session_state.fc_reveal = False
+                st.rerun()
+        with c3:
+            if st.button("✅ Easy", use_container_width=True, key=f"fc_easy_{st.session_state.fc_idx}"):
+                word.update_mastery(True)
+                st.session_state.fc_idx += 1
+                st.session_state.fc_reveal = False
+                st.rerun()
 
-# ============================================================================
-# STORY LOADER - DYNAMIC VERSION
-# ============================================================================
-def load_all_story_files():
-    """Dynamically load ALL story JSON files from directory"""
-    stories = []
-    json_files = glob.glob("story*.json") + glob.glob("*.json")
-    unique_files = list(set(json_files))
-    story_files = [f for f in unique_files
-                   if f not in ["progress.json", "stories.json"]
-                   and os.path.exists(f)]
+def mode_quiz(words: List[WordData], audio_mgr: AudioManager):
+    if len(words) < 4: 
+        st.info(f"Need at least 4 words for quiz. You have {len(words)} words.")
+        return
+    
+    if 'quiz_q_idx' not in st.session_state:
+        st.session_state.quiz_questions = random.sample(words, min(10, len(words)))
+        st.session_state.quiz_q_idx = 0
+        st.session_state.quiz_score = 0
 
-    word_emojis = {
-        "I": "👤", "we": "👥", "you": "👉", "he": "👨", "she": "👩", "it": "🐾",
-        "they": "👨‍👩‍👧‍👦", "this": "👇", "that": "👆", "these": "👇👇", "those": "👆👆",
-        "my": "🎁", "your": "🎯", "his": "🎩", "her": "💍", "our": "🏠", "their": "🏘️",
-        "the": "⭐", "a": "1️⃣", "an": "🔤",
-        "am": "🟰", "is": "🟰", "are": "🟰", "was": "🕐", "were": "🕑",
-        "have": "🤲", "has": "🖐️", "had": "🕰️",
-        "do": "🔨", "does": "🔧", "did": "⏮️",
-        "see": "👁️", "look": "👀", "watch": "📺",
-        "like": "❤️", "love": "💖", "want": "🎯", "need": "❗",
-        "play": "🎮", "run": "🏃", "jump": "🤸", "walk": "🚶",
-        "eat": "🍎", "drink": "🥤", "sleep": "😴", "wake": "⏰",
-        "cat": "🐱", "dog": "🐶", "bird": "🐦", "fish": "🐠", "ball": "⚽",
-        "house": "🏠", "home": "🏡", "car": "🚗", "bus": "🚌", "book": "📚",
-        "pen": "🖊️", "pencil": "✏️", "paper": "📄", "table": "🪑", "chair": "💺",
-        "boy": "👦", "girl": "👧", "man": "👨", "woman": "👩", "child": "🧒",
-        "happy": "😊", "sad": "😢", "big": "🐘", "small": "🐜", "tall": "🌳",
-        "short": "📏", "red": "🔴", "blue": "🔵", "green": "🟢", "yellow": "🟡",
-        "white": "⬜", "black": "⬛", "good": "👍", "bad": "👎", "hot": "🔥",
-        "cold": "❄️", "new": "🆕", "old": "🕰️", "young": "👶", "fast": "⚡",
-        "slow": "🐌", "clean": "✨", "dirty": "💩", "fluffy": "☁️", "round": "⭕",
-        "and": "➕", "but": "🚫", "or": "🤔", "if": "❓", "because": "🔍",
-        "in": "📦", "on": "🔼", "at": "📍", "to": "➡️", "from": "⬅️",
-        "with": "🤝", "without": "🙅", "for": "🎁", "of": "🔗", "by": "👤",
-        "up": "⬆️", "down": "⬇️", "here": "📍", "there": "🗺️", "now": "⏰",
-        "then": "⏳", "always": "♾️", "never": "❌", "sometimes": "⏱️"
-    }
+    if st.session_state.quiz_q_idx >= len(st.session_state.quiz_questions):
+        st.success(f"Quiz Finished! Score: {st.session_state.quiz_score}/{len(st.session_state.quiz_questions)}")
+        if st.button("New Quiz"):
+            del st.session_state.quiz_q_idx
+            st.rerun()
+        return
 
-    categories = {
-        "i": "pronoun", "we": "pronoun", "you": "pronoun", "he": "pronoun",
-        "she": "pronoun", "it": "pronoun", "they": "pronoun", "this": "pronoun",
-        "that": "pronoun", "these": "pronoun", "those": "pronoun", "my": "pronoun",
-        "your": "pronoun", "his": "pronoun", "her": "pronoun", "our": "pronoun",
-        "their": "pronoun",
-        "the": "article", "a": "article", "an": "article",
-        "am": "verb", "is": "verb", "are": "verb", "was": "verb", "were": "verb",
-        "have": "verb", "has": "verb", "had": "verb", "do": "verb", "does": "verb",
-        "did": "verb", "see": "verb", "look": "verb", "watch": "verb", "like": "verb",
-        "love": "verb", "want": "verb", "need": "verb", "play": "verb", "run": "verb",
-        "jump": "verb", "walk": "verb", "eat": "verb", "drink": "verb", "sleep": "verb",
-        "wake": "verb",
-        "cat": "noun", "dog": "noun", "bird": "noun", "fish": "noun", "ball": "noun",
-        "house": "noun", "home": "noun", "car": "noun", "bus": "noun", "book": "noun",
-        "pen": "noun", "pencil": "noun", "paper": "noun", "table": "noun", "chair": "noun",
-        "boy": "noun", "girl": "noun", "man": "noun", "woman": "noun", "child": "noun",
-        "happy": "adjective", "sad": "adjective", "big": "adjective", "small": "adjective",
-        "tall": "adjective", "short": "adjective", "red": "adjective", "blue": "adjective",
-        "green": "adjective", "yellow": "adjective", "white": "adjective", "black": "adjective",
-        "good": "adjective", "bad": "adjective", "hot": "adjective", "cold": "adjective",
-        "new": "adjective", "old": "adjective", "young": "adjective", "fast": "adjective",
-        "slow": "adjective", "clean": "adjective", "dirty": "adjective", "fluffy": "adjective",
-        "round": "adjective",
-        "in": "preposition", "on": "preposition", "at": "preposition", "to": "preposition",
-        "from": "preposition", "with": "preposition", "without": "preposition", "for": "preposition",
-        "of": "preposition", "by": "preposition", "up": "preposition", "down": "preposition",
-        "and": "conjunction", "but": "conjunction", "or": "conjunction", "if": "conjunction",
-        "because": "conjunction"
-    }
+    current_q = st.session_state.quiz_questions[st.session_state.quiz_q_idx]
+    
+    st.markdown(f"### Question {st.session_state.quiz_q_idx + 1}")
+    st.markdown(f"<h2 style='text-align: center;'>{current_q.english}</h2>", unsafe_allow_html=True)
+    
+    if st.button("🔊 Play Audio", key=f"quiz_play_{st.session_state.quiz_q_idx}"):
+        audio_bytes = audio_mgr.get_audio_bytes(current_q.english)
+        if audio_bytes:
+            audio_html = audio_mgr.render_player(audio_bytes, current_q.english)
+            st.markdown(audio_html, unsafe_allow_html=True)
 
-    for story_file in sorted(story_files):
-        try:
-            with open(story_file, 'r', encoding='utf-8') as f:
-                story_data = json.load(f)
-            word_objects = []
-            for word_dict in story_data.get("content", []):
-                english_word = word_dict.get("english", "")
-                if not english_word:
-                    continue
-                english_lower = english_word.lower()
-                emoji = word_emojis.get(english_lower, "📝")
-                category = categories.get(english_lower, "general")
-                if category == "pronoun":
-                    example = f"{english_word} am learning English."
-                elif category == "verb":
-                    example = f"I {english_word} every day."
-                elif category == "noun":
-                    example = f"This is a {english_word}."
-                elif category == "adjective":
-                    example = f"The {english_word} cat."
-                elif category == "article":
-                    example = f"{english_word} book is interesting."
-                else:
-                    example = f"This is the word '{english_word}'"
-                mnemonic = f"Remember: '{english_word}' means '{word_dict.get('hindi', '')}'"
-                level = story_data.get("level", "Beginner")
-                difficulty = 1 if level == "Beginner" else 2 if level == "Intermediate" else 3
-                word_obj = WordData(
-                    english=english_word,
-                    hindi=word_dict.get("hindi", ""),
-                    phonetic=word_dict.get("phonetic", "/?/"),
-                    category=category,
-                    difficulty=difficulty,
-                    example_sentence=example,
-                    mnemonic=mnemonic,
-                    image_hint=emoji
-                )
-                word_objects.append(word_obj)
-            story = {
-                "id": story_data.get("id", len(stories) + 1),
-                "title": story_data.get("title", f"Story {len(stories) + 1}"),
-                "hindi_title": story_data.get("hindi_title", "कहानी"),
-                "difficulty": difficulty,
-                "words_per_minute": story_data.get("words_per_minute", 30),
-                "level": level,
-                "filename": story_file,
-                "content": word_objects
-            }
-            stories.append(story)
-        except json.JSONDecodeError as e:
-            st.sidebar.error(f"Invalid JSON in {story_file}: {str(e)}")
-        except Exception as e:
-            st.sidebar.warning(f"Could not load {story_file}: {str(e)}")
-    return stories
+    correct = current_q.hindi
+    options = [correct] + random.sample([w.hindi for w in words if w.hindi != correct], 3)
+    random.shuffle(options)
 
-# ============================================================================
-# FLASHCARDS & QUIZ – no modification needed (they only call create_audio_player)
-# (They will automatically use the simplified player now.)
-# ============================================================================
+    choice = st.radio("Select Meaning:", options, key=f"quiz_choice_{st.session_state.quiz_q_idx}")
+    if st.button("Submit", use_container_width=True, type="primary", key=f"quiz_submit_{st.session_state.quiz_q_idx}"):
+        if choice == correct:
+            st.session_state.quiz_score += 1
+            st.toast("Correct!", icon="✅")
+        else:
+            st.toast(f"Wrong! It was {correct}", icon="❌")
+        time.sleep(0.5)
+        st.session_state.quiz_q_idx += 1
+        st.rerun()
 
 # ============================================================================
 # MAIN APPLICATION
 # ============================================================================
+
 def main():
-    storage = LearningStorage()
-    audio_manager = AudioManager()
-    engine = LearningEngine()
+    st.set_page_config(page_title="Bilingual Master", layout="wide")
+    storage = StorageManager()
+    audio_mgr = AudioManager()
+    profile, saved_words = storage.load()
+    
+    load_custom_css(profile.dark_mode)
+    
+    # Debug section - show what's in the directory
+    st.sidebar.markdown("### Debug Info")
+    current_dir = os.listdir(".")
+    st.sidebar.write(f"Files in directory ({len(current_dir)}):")
+    for file in sorted(current_dir):
+        st.sidebar.write(f"- {file}")
+    
+    # Load stories
+    with st.spinner("Loading stories..."):
+        stories = load_stories_from_files()
+    
+    with st.container():
+        col_title, col_theme = st.columns([4, 1])
+        with col_title:
+            st.title("📚 Bilingual Master")
+        with col_theme:
+            if st.button("🌙/☀️", help="Toggle Dark Mode"):
+                profile.dark_mode = not profile.dark_mode
+                storage.save(profile, [])
+                st.rerun()
 
-    if 'profile' not in st.session_state:
-        profile, _ = storage.load_progress()
-        if not profile:
-            profile = UserProfile(name="Learner")
-        st.session_state.profile = profile
-    if 'test_audio_triggered' not in st.session_state:
-        st.session_state.test_audio_triggered = False
-    if 'current_story' not in st.session_state:
-        st.session_state.current_story = 0
-    if 'current_word' not in st.session_state:
-        st.session_state.current_word = None
-
-    load_css(st.session_state.profile.dark_mode)
-
-    st.title("📚 Bilingual English Master")
-    st.markdown("**Learn English through Hindi | Intelligent & Adaptive**")
+    if not stories:
+        st.error("""
+        ## No stories loaded!
+        
+        **Possible issues:**
+        1. No JSON files in the directory
+        2. JSON files have wrong format
+        3. JSON files are empty
+        
+        **Create a simple test file named `test.json` with:**
+        ```json
+        [
+          {
+            "english": "Hello",
+            "hindi": "नमस्ते"
+          },
+          {
+            "english": "Goodbye", 
+            "hindi": "अलविदा"
+          }
+        ]
+        ```
+        
+        **Or with a wrapper:**
+        ```json
+        {
+          "title": "My Story",
+          "content": [
+            {"english": "Hello", "hindi": "नमस्ते"},
+            {"english": "Goodbye", "hindi": "अलविदा"}
+          ]
+        }
+        ```
+        """)
+        
+        # Try to load a test file
+        test_data = [
+            {"english": "Hello", "hindi": "नमस्ते", "image_hint": "👋"},
+            {"english": "Goodbye", "hindi": "अलविदा", "image_hint": "👋"},
+            {"english": "Thank you", "hindi": "धन्यवाद", "image_hint": "🙏"},
+            {"english": "Please", "hindi": "कृपया", "image_hint": "🙏"},
+            {"english": "Yes", "hindi": "हाँ", "image_hint": "✅"}
+        ]
+        
+        test_words = []
+        for item in test_data:
+            word = WordData(
+                english=item["english"],
+                hindi=item["hindi"],
+                phonetic=f"/{item['english'].lower()}/",
+                category="general",
+                difficulty=1,
+                example_sentence=f"This is {item['english']}.",
+                mnemonic=f"Remember {item['english']}",
+                image_hint=item["image_hint"]
+            )
+            test_words.append(word)
+        
+        stories = [{
+            "filename": "test_data.json",
+            "title": "Test Words (5 words)",
+            "level": "Beginner",
+            "content": test_words
+        }]
+        
+        st.warning("Using test data instead. Create a JSON file to use your own words.")
 
     with st.sidebar:
-        st.markdown("## ⚙️ Settings")
-        new_name = st.text_input("Your Name", st.session_state.profile.name)
-        if new_name != st.session_state.profile.name:
-            st.session_state.profile.name = new_name
-            st.success(f"Welcome, {new_name}!")
-        st.session_state.profile.auto_play_audio = st.checkbox("Auto-play audio", st.session_state.profile.auto_play_audio)
-        st.session_state.profile.dark_mode = st.checkbox("Dark Mode", st.session_state.profile.dark_mode)
-        pace = st.select_slider("Learning Pace", options=["slow", "normal", "fast"], value=st.session_state.profile.learning_pace)
-        st.session_state.profile.learning_pace = pace
-        if st.button("🗑️ Clear Audio Cache"):
-            audio_manager.clear_cache()
-        st.markdown("---")
-        st.markdown("### 📚 Story Management")
-        if st.button("🔄 Scan for New Story Files", type="primary"):
-            if 'stories' in st.session_state:
-                del st.session_state.stories
-            if 'all_words' in st.session_state:
-                del st.session_state.all_words
+        st.header("Settings")
+        st.write(f"Hello, **{profile.name}**!")
+        
+        st.markdown("### Current Story")
+        story_titles = [s['title'] for s in stories]
+        sel_idx = st.selectbox("Choose Story:", range(len(stories)), format_func=lambda x: story_titles[x])
+        
+        if st.button("🔄 Reload Files"):
             st.rerun()
+
         st.markdown("---")
-        st.markdown("### 📤 Add New Story")
-        uploaded_file = st.file_uploader("Upload JSON story file", type=["json"])
+        uploaded_file = st.file_uploader("Upload JSON Story", type=["json"], key="uploader")
         if uploaded_file is not None:
             try:
-                content = uploaded_file.getvalue().decode("utf-8")
-                story_data = json.loads(content)
-                filename = uploaded_file.name
-                with open(filename, "w", encoding="utf-8") as f:
-                    json.dump(story_data, f, indent=2)
-                st.success(f"✅ Story saved as {filename}")
-                if 'stories' in st.session_state:
-                    del st.session_state.stories
-                if 'all_words' in st.session_state:
-                    del st.session_state.all_words
+                file_path = Path(uploaded_file.name)
+                with open(file_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success(f"Uploaded {uploaded_file.name}!")
+                time.sleep(1)
                 st.rerun()
             except Exception as e:
-                st.error(f"Error uploading file: {str(e)}")
+                st.error(f"Error: {e}")
 
-    current_stories = load_all_story_files()
-    if 'stories' not in st.session_state:
-        st.session_state.stories = current_stories
-    else:
-        current_filenames = {s['filename'] for s in current_stories}
-        existing_filenames = {s.get('filename', '') for s in st.session_state.stories}
-        if current_filenames != existing_filenames:
-            st.session_state.stories = current_stories
+    current_story_words = stories[sel_idx]['content']
+    current_story_filename = stories[sel_idx]['filename']
+    
+    # Merge with saved progress
+    saved_map = {w.english: w for w in saved_words}
+    for w in current_story_words:
+        if w.english in saved_map:
+            saved_w = saved_map[w.english]
+            w.mastery_level = saved_w.mastery_level
+            w.review_count = saved_w.review_count
+            w.last_reviewed = saved_w.last_reviewed
 
-    if not st.session_state.stories:
-        st.error("""
-        ⚠️ No story files found!
-        Please add JSON story files to the directory.
-        Files should be named like:
-        - `story1.json`
-        - `story2.json`
-        - `mystory.json`
-        Or upload a story file using the uploader in the sidebar.
-        """)
-        return
+    def save_current():
+        storage.save(profile, current_story_words)
 
-    if 'all_words' not in st.session_state:
-        all_words = []
-        for story in st.session_state.stories:
-            all_words.extend(story['content'])
-        _, saved_words = storage.load_progress()
-        if saved_words:
-            word_dict = {w.english: w for w in saved_words}
-            for word in all_words:
-                if word.english in word_dict:
-                    saved = word_dict[word.english]
-                    word.mastery_level = saved.mastery_level
-                    word.review_count = saved.review_count
-                    word.last_reviewed = saved.last_reviewed
-        st.session_state.all_words = all_words
+    tab1, tab2, tab3, tab4 = st.tabs(["📖 Story Reader", "🎴 Flashcards", "🧠 Quiz", "📊 Stats"])
+    
+    with tab1:
+        st.markdown(f"### 📖 Reading: {stories[sel_idx]['title'].split('(')[0].strip()}")
+        mode_story_reader(current_story_words, current_story_filename, audio_mgr)
+        save_current()
 
-    render_dashboard(st.session_state.profile, st.session_state.all_words)
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("📚 Total Stories", len(st.session_state.stories))
-    with col2:
-        st.metric("📝 Total Words", len(st.session_state.all_words))
-    with col3:
-        st.metric("✨ Unique Words", len(set(word.english for word in st.session_state.all_words)))
+    with tab2:
+        mode_flashcards(current_story_words, audio_mgr)
+        save_current()
 
-    st.markdown("""
-    <div class="important-note">
-    🔊 <strong>Audio Playback</strong><br>
-    Standard audio controls only — no looping, pause/resume, or stop buttons.
-    </div>
-    """, unsafe_allow_html=True)
+    with tab3:
+        mode_quiz(current_story_words, audio_mgr)
 
-    st.markdown("### 🎵 Step 1: Test Your Audio")
-    if st.button("🔊 TEST AUDIO - Click Here!", key="test_audio", type="primary", use_container_width=True):
-        st.session_state.test_audio_triggered = True
-    if st.session_state.get('test_audio_triggered', False):
-        test_audio = audio_manager.generate_audio("Hello! Your audio is working perfectly!")
-        if test_audio:
-            audio_manager.create_audio_player(test_audio, "Test Audio", "test_audio_player")
-        st.success("✅ Audio is ready!")
-        st.markdown("---")
-
-    if 'stories' in st.session_state and st.session_state.stories:
-        story_options = {}
-        for i, s in enumerate(st.session_state.stories):
-            level_emoji = "🟢" if s.get('difficulty', 1) == 1 else "🟡" if s.get('difficulty', 1) == 2 else "🔴"
-            story_options[f"{level_emoji} {s['title']} ({s['hindi_title']}) - {len(s['content'])} words"] = i
-        selected_story = st.selectbox(
-            "Choose a story:",
-            options=list(story_options.keys()),
-            index=st.session_state.get('current_story', 0)
-        )
-        story_idx = story_options[selected_story]
-        st.session_state.current_story = story_idx
-        story = st.session_state.stories[story_idx]
-        st.markdown(f"## 📖 {story['title']} - {story['hindi_title']}")
-        st.markdown(f"**Level:** {story.get('level', 'Beginner')} | **Words:** {len(story['content'])} | **Source:** `{story.get('filename', 'Unknown')}`")
-
-        st.markdown("### 📖 Complete Story:")
-        story_text_english = " ".join([word.english for word in story['content']])
-        story_text_hindi = " ".join([word.hindi for word in story['content']])
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"**English:** {story_text_english}")
-        with col2:
-            st.markdown(f"**Hindi:** {story_text_hindi}")
-
-        if st.button("🎧 Listen to Full Story"):
-            full_audio = audio_manager.generate_audio(story_text_english)
-            if full_audio:
-                audio_id = f"story_{story_idx}"
-                audio_manager.create_audio_player(full_audio, story_text_english, audio_id)
-        st.markdown("---")
-
-        st.markdown("### 🎯 Click any word to learn:")
-        cols_per_row = 4
-        words = story['content']
-        for global_index, word_data in enumerate(words):
-            row = global_index // cols_per_row
-            col_in_row = global_index % cols_per_row
-            if col_in_row == 0:
-                cols = st.columns(cols_per_row)
-            with cols[col_in_row]:
-                badge = word_data.get_mastery_badge()
-                unique_key = f"word_story{story_idx}_global{global_index}"
-                if st.button(
-                    f"{badge} {word_data.english}",
-                    key=unique_key,
-                    use_container_width=True,
-                    help=f"{word_data.hindi} - {int(word_data.mastery_level * 100)}% mastered"
-                ):
-                    st.session_state.current_word = word_data
-                    st.rerun()
-
-        if 'current_word' in st.session_state and st.session_state.current_word:
-            word = st.session_state.current_word
-            st.markdown("---")
-            feedback = render_word_details(word, audio_manager)
-            if feedback is not None:
-                engine.update_word_mastery(word, feedback)
-                storage.save_progress(st.session_state.profile, st.session_state.all_words)
-                st.success("Progress saved!")
-                time.sleep(0.5)
-                st.rerun()
-
-    st.markdown("---")
-    st.markdown("### 🧠 Smart Review (Spaced Repetition)")
-    review_words = engine.get_spaced_repetition_words(st.session_state.all_words, limit=20)
-    if review_words:
-        st.info(f"📚 {len(review_words)} words due for review!")
-        review_mode = st.radio("Choose review mode:", ["Flashcards (10 cards per session)", "Quiz (10 questions per session)"], horizontal=True)
-        if review_mode.startswith("Flashcards"):
-            render_flashcards(review_words, audio_manager, engine)
+    with tab4:
+        st.header("📊 Learning Progress")
+        if current_story_words:
+            learned = sum(1 for w in current_story_words if w.mastery_level >= 0.8)
+            due = sum(1 for w in current_story_words if w.needs_review)
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Words", len(current_story_words))
+            c2.metric("Mastered (80%+)", learned)
+            c3.metric("Due for Review", due)
+            
+            import pandas as pd
+            df = pd.DataFrame([{"Word": w.english, "Mastery": w.mastery_level} for w in current_story_words])
+            st.bar_chart(df.set_index("Word"))
+            
+            # Show word list
+            st.markdown("### Word List")
+            for i, word in enumerate(current_story_words):
+                st.write(f"{i+1}. **{word.english}** → {word.hindi} (Mastery: {word.mastery_level:.0%})")
         else:
-            render_quiz_session(review_words, audio_manager, engine)
-    else:
-        st.success("🎉 No words due for review! Keep learning new words.")
-
-    st.markdown("---")
-    with st.expander("📚 Browse All Words (with audio)"):
-        search = st.text_input("Search words...")
-        filtered_words = [w for w in st.session_state.all_words
-                          if not search or search.lower() in w.english.lower() or search.lower() in w.hindi.lower()]
-        for i, word in enumerate(sorted(filtered_words, key=lambda w: w.english)):
-            col1, col2, col3, col4 = st.columns([2, 2, 1, 2])
-            with col1:
-                st.markdown(f"**{word.english}** {word.image_hint}")
-            with col2:
-                st.markdown(f"*{word.hindi}*")
-            with col3:
-                st.markdown(f"{int(word.mastery_level * 100)}%")
-            with col4:
-                audio_bytes = audio_manager.generate_audio(word.english)
-                if audio_bytes:
-                    audio_id = f"browse_{word.english}_{i}"
-                    audio_manager.create_audio_player(audio_bytes, word.english, audio_id)
-
-    st.markdown("---")
-    if st.button("💾 Save All Progress", use_container_width=True):
-        if 'all_words' in st.session_state:
-            storage.save_progress(st.session_state.profile, st.session_state.all_words)
-            st.success("✅ Progress saved successfully!")
-        else:
-            st.error("No words to save!")
-
-    st.session_state.profile.last_session = datetime.now()
-    st.session_state.profile.streak_days = engine.calculate_streak(st.session_state.profile)
-
-# ============================================================================
-# FLASHCARDS & QUIZ HELPERS (unchanged aside from calling simplified audio)
-# ============================================================================
-def render_flashcards(review_words: List[WordData], audio_manager: AudioManager, engine: LearningEngine):
-    if 'flashcard_session' not in st.session_state:
-        st.session_state.flashcard_session = {
-            'words': review_words[:10],
-            'current_index': 0,
-            'show_answer': False,
-            'completed': []
-        }
-    session = st.session_state.flashcard_session
-    if not session['words']:
-        st.success("🎉 All flashcards completed!")
-        if st.button("Start New Session"):
-            del st.session_state.flashcard_session
-            st.rerun()
-        return
-    current_word = session['words'][session['current_index']]
-    total_cards = len(session['words'])
-    current_card = session['current_index'] + 1
-    progress = current_card / total_cards
-    st.progress(progress)
-    st.caption(f"Card {current_card} of {total_cards}")
-    st.markdown(f"""
-    <div class="flashcard">
-        <h1 style="font-size: 4rem; margin-bottom: 20px;">{current_word.english}</h1>
-        <h2 style="font-size: 3rem; margin-bottom: 20px;">{current_word.image_hint}</h2>
-    </div>
-    """, unsafe_allow_html=True)
-
-    audio_bytes = audio_manager.generate_audio(current_word.english)
-    if audio_bytes:
-        audio_id = f"flashcard_{current_word.english}_{current_card}"
-        audio_manager.create_audio_player(audio_bytes, current_word.english, audio_id)
-
-    if not session['show_answer']:
-        col1, col2 = st.columns([1, 2])
-        with col1:
-            if st.button("🃏 Show Answer", type="primary", use_container_width=True):
-                session['show_answer'] = True
-                st.rerun()
-        with col2:
-            if st.button("⏭️ Skip Card", use_container_width=True):
-                session['completed'].append((current_word, False))
-                session['current_index'] += 1
-                session['show_answer'] = False
-                if session['current_index'] >= len(session['words']):
-                    show_flashcard_results(session['completed'], engine)
-                else:
-                    st.rerun()
-    else:
-        st.markdown(f"""
-        <div style="background: white; padding: 30px; border-radius: 15px; margin: 20px 0; text-align: center;">
-            <h2 style="color: #ff6b6b; font-size: 3rem;">{current_word.hindi}</h2>
-            <p style="font-size: 1.5rem; color: #666;">{current_word.phonetic}</p>
-            <p style="font-size: 1.2rem; color: #888;">Category: {current_word.category}</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-        if current_word.example_sentence:
-            st.info(f"**Example:** {current_word.example_sentence}")
-            sent_audio = audio_manager.generate_audio(current_word.example_sentence)
-            if sent_audio:
-                sent_id = f"flashcard_sentence_{current_word.english}_{current_card}"
-                audio_manager.create_audio_player(sent_audio, current_word.example_sentence, sent_id)
-
-        st.markdown(f"**💡 Tip:** {current_word.mnemonic}")
-
-        st.markdown("### How well did you know this word?")
-        col1, col2, col3, col4 = st.columns(4)
-        for idx, (label, correct) in enumerate([("✅ Easy", True), ("🟡 Medium", True), ("❌ Hard", False), ("⏭️ Next", False)]):
-            with [col1, col2, col3, col4][idx]:
-                if st.button(label, use_container_width=True, key=f"{label.split()[0]}_{current_word.english}_{current_card}"):
-                    if label != "⏭️ Next":
-                        engine.update_word_mastery(current_word, correct)
-                    session['completed'].append((current_word, correct if label != "⏭️ Next" else False))
-                    session['current_index'] += 1
-                    session['show_answer'] = False
-                    if session['current_index'] >= len(session['words']):
-                        show_flashcard_results(session['completed'], engine)
-                    else:
-                        st.rerun()
-
-def show_flashcard_results(completed: List[Tuple[WordData, bool]], engine: LearningEngine):
-    correct = sum(1 for _, correct in completed if correct)
-    total = len(completed)
-    score = (correct / total) * 100 if total > 0 else 0
-    st.success(f"🎉 Session Complete!")
-    col1, col2, col3 = st.columns(3)
-    with col1: st.metric("Score", f"{score:.0f}%")
-    with col2: st.metric("Correct", correct)
-    with col3: st.metric("Total", total)
-    with st.expander("📊 View Details"):
-        for word, was_correct in completed:
-            emoji = "✅" if was_correct else "❌"
-            mastery_emoji = word.get_mastery_badge()
-            st.write(f"{emoji} {mastery_emoji} **{word.english}** = {word.hindi} ({int(word.mastery_level * 100)}%)")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 Practice Again", use_container_width=True):
-            del st.session_state.flashcard_session
-            st.rerun()
-    with col2:
-        if st.button("📚 Back to Learning", use_container_width=True):
-            del st.session_state.flashcard_session
-            st.rerun()
-
-def render_quiz_session(review_words: List[WordData], audio_manager: AudioManager, engine: LearningEngine):
-    if 'quiz_session' not in st.session_state:
-        st.session_state.quiz_session = {
-            'questions': generate_quiz_questions(review_words, num_questions=10),
-            'current_index': 0,
-            'answers': [],
-            'completed': False
-        }
-    session = st.session_state.quiz_session
-    if not session['questions']:
-        st.info("Not enough words for a quiz. Learn more words first!")
-        return
-    if session['completed']:
-        show_quiz_results(session['questions'], session['answers'], engine)
-        return
-    question = session['questions'][session['current_index']]
-    total_questions = len(session['questions'])
-    current_q = session['current_index'] + 1
-    progress = current_q / total_questions
-    st.progress(progress)
-    st.caption(f"Question {current_q} of {total_questions}")
-    st.markdown(f"""
-    <div class="quiz-question">
-        <h3>What is the Hindi translation of:</h3>
-        <h2 style="font-size: 2.5rem; color: #6a11cb;">"{question['word'].english}"</h2>
-    </div>
-    """, unsafe_allow_html=True)
-
-    audio_bytes = audio_manager.generate_audio(question['word'].english)
-    if audio_bytes:
-        audio_id = f"quiz_{question['word'].english}_{current_q}"
-        audio_manager.create_audio_player(audio_bytes, question['word'].english, audio_id)
-
-    selected_option = st.radio("Choose the correct translation:", question['options'], key=f"quiz_option_{session['current_index']}")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if st.button("Submit Answer", type="primary", use_container_width=True):
-            is_correct = selected_option == question['correct']
-            session['answers'].append({
-                'word': question['word'],
-                'selected': selected_option,
-                'correct': question['correct'],
-                'is_correct': is_correct
-            })
-            engine.update_word_mastery(question['word'], is_correct)
-            session['current_index'] += 1
-            if session['current_index'] >= len(session['questions']):
-                session['completed'] = True
-            st.rerun()
-    with col2:
-        if st.button("Skip Question", use_container_width=True):
-            session['answers'].append({
-                'word': question['word'],
-                'selected': "Skipped",
-                'correct': question['correct'],
-                'is_correct': False
-            })
-            session['current_index'] += 1
-            if session['current_index'] >= len(session['questions']):
-                session['completed'] = True
-            st.rerun()
-
-def generate_quiz_questions(words: List[WordData], num_questions: int = 10) -> List[Dict]:
-    if len(words) < 4:
-        return []
-    questions = []
-    used_words = set()
-    for _ in range(min(num_questions, len(words))):
-        available_words = [w for w in words if w.english not in used_words]
-        if not available_words:
-            break
-        word = random.choice(available_words)
-        used_words.add(word.english)
-        correct = word.hindi
-        wrong_pool = [w.hindi for w in words if w.hindi != correct]
-        if len(wrong_pool) < 3:
-            wrong_options = ["गलत", "अनुवाद", "शब्द"][:3]
-        else:
-            wrong_options = random.sample(wrong_pool, 3)
-        options = [correct] + wrong_options
-        random.shuffle(options)
-        questions.append({
-            'word': word,
-            'correct': correct,
-            'options': options
-        })
-    return questions
-
-def show_quiz_results(questions: List[Dict], answers: List[Dict], engine: LearningEngine):
-    correct_count = sum(1 for answer in answers if answer['is_correct'])
-    total = len(questions)
-    score = (correct_count / total) * 100 if total > 0 else 0
-    st.success("🎉 Quiz Complete!")
-    col1, col2, col3 = st.columns(3)
-    with col1: st.metric("Score", f"{score:.0f}%")
-    with col2: st.metric("Correct", correct_count)
-    with col3: st.metric("Total", total)
-    if score >= 90:
-        rating = "🏆 Excellent!"
-    elif score >= 70:
-        rating = "👍 Good job!"
-    elif score >= 50:
-        rating = "😊 Not bad!"
-    else:
-        rating = "💪 Keep practicing!"
-    st.info(rating)
-    with st.expander("📋 Review Answers"):
-        for i, (question, answer) in enumerate(zip(questions, answers), 1):
-            emoji = "✅" if answer['is_correct'] else "❌"
-            st.markdown(f"**Q{i}: {question['word'].english}**")
-            if answer['is_correct']:
-                st.markdown(f"{emoji} Your answer: **{answer['selected']}** (Correct!)")
-            else:
-                st.markdown(f"{emoji} Your answer: **{answer['selected']}**")
-                st.markdown(f"Correct answer: **{answer['correct']}**")
-            audio_bytes = engine.audio_manager.generate_audio(question['word'].english)
-            if audio_bytes:
-                audio_id = f"review_{question['word'].english}_{i}"
-                engine.audio_manager.create_audio_player(audio_bytes, question['word'].english, audio_id)
-            st.markdown("---")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("🔄 Try Again", use_container_width=True):
-            del st.session_state.quiz_session
-            st.rerun()
-    with col2:
-        if st.button("📚 Back to Learning", use_container_width=True):
-            del st.session_state.quiz_session
-            st.rerun()
+            st.warning("No words to display.")
 
 if __name__ == "__main__":
     main()
