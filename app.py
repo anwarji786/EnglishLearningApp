@@ -6,7 +6,7 @@ from pathlib import Path
 from gtts import gTTS
 import io
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional, Any, Tuple  # <--- FIXED: Added 'Tuple' here
+from typing import List, Dict, Optional, Any, Tuple
 import hashlib
 from datetime import datetime
 import glob
@@ -125,22 +125,25 @@ class AudioManager:
             st.error(f"Audio Error: {e}")
             return None
 
-    def render_player(self, audio_bytes: bytes, label: str, key: str):
-        """Renders a robust HTML5 audio player with Loop/Pause controls."""
+    def render_player(self, audio_bytes: bytes, label: str, unique_id: str):
+        """
+        Renders a robust HTML5 audio player.
+        unique_id: Must be unique for every instance (e.g., using index) to prevent stale audio.
+        """
         if not audio_bytes: return
         
         b64_audio = base64.b64encode(audio_bytes).decode()
         html = f"""
         <div style="background: #f1f3f5; padding: 10px; border-radius: 10px; margin: 10px 0;">
             <div style="font-size: 0.9rem; color: #495057; margin-bottom: 5px;">🔊 {label}</div>
-            <audio id="audio_{key}" controls style="width: 100%; height: 35px;">
+            <audio id="audio_{unique_id}" controls style="width: 100%; height: 35px;">
                 <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mpeg">
             </audio>
             <div style="display: flex; gap: 5px; margin-top: 8px;">
-                <button onclick="document.getElementById('audio_{key}').play()" style="flex:1; background:#4CAF50; color:white; border:none; padding:8px; border-radius:5px;">▶ Play</button>
-                <button onclick="document.getElementById('audio_{key}').pause()" style="flex:1; background:#FF9800; color:white; border:none; padding:8px; border-radius:5px;">⏸ Pause</button>
+                <button onclick="document.getElementById('audio_{unique_id}').play()" style="flex:1; background:#4CAF50; color:white; border:none; padding:8px; border-radius:5px;">▶ Play</button>
+                <button onclick="document.getElementById('audio_{unique_id}').pause()" style="flex:1; background:#FF9800; color:white; border:none; padding:8px; border-radius:5px;">⏸ Pause</button>
                 <button onclick="
-                    var aud = document.getElementById('audio_{key}');
+                    var aud = document.getElementById('audio_{unique_id}');
                     aud.currentTime = 0; 
                     aud.play(); 
                     aud.onended = function() {{ aud.currentTime = 0; aud.play(); }}; 
@@ -295,28 +298,37 @@ def load_custom_css(dark_mode: bool):
 # APP LOGIC MODES
 # ============================================================================
 
-def mode_story_reader(story_data: List[WordData], audio_mgr: AudioManager, storage: StorageManager, profile: UserProfile):
+def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr: AudioManager, storage: StorageManager, profile: UserProfile):
     """Sequential Story Reader: One by one through the story."""
     
-    # Init State
-    if 'reader_idx' not in st.session_state or st.session_state.get('current_story_id') != id(story_data):
+    # FIXED: Use story_filename (constant) instead of id(story_data) (variable)
+    if 'reader_filename' not in st.session_state or st.session_state['reader_filename'] != story_filename:
+        st.session_state.reader_filename = story_filename
         st.session_state.reader_idx = 0
-        st.session_state.current_story_id = id(story_data)
         st.session_state.show_hindi = False
 
+    # Get current index safely
+    if 'reader_idx' not in st.session_state:
+        st.session_state.reader_idx = 0
+        
     idx = st.session_state.reader_idx
+    
+    # Boundary check
+    if idx >= len(story_data):
+        idx = len(story_data) - 1
+        st.session_state.reader_idx = idx
     
     # Navigation Logic
     col_prev, col_center, col_next = st.columns([1, 3, 1])
     
     with col_prev:
-        if st.button("⬅️ Prev", disabled=(idx == 0), use_container_width=True):
+        if st.button("⬅️ Prev", disabled=(idx == 0), use_container_width=True, key="btn_prev"):
             st.session_state.reader_idx -= 1
             st.session_state.show_hindi = False
             st.rerun()
             
     with col_next:
-        if st.button("Next ➡️", disabled=(idx == len(story_data)-1), use_container_width=True):
+        if st.button("Next ➡️", disabled=(idx == len(story_data)-1), use_container_width=True, key="btn_next"):
             st.session_state.reader_idx += 1
             st.session_state.show_hindi = False
             st.rerun()
@@ -329,7 +341,7 @@ def mode_story_reader(story_data: List[WordData], audio_mgr: AudioManager, stora
     # Word Display
     word = story_data[idx]
     
-    # Audio Logic (Auto-play if enabled)
+    # Audio Logic
     audio_bytes = audio_mgr.get_audio_bytes(word.english, slow=True)
     
     # Card
@@ -341,13 +353,15 @@ def mode_story_reader(story_data: List[WordData], audio_mgr: AudioManager, stora
     </div>
     """, unsafe_allow_html=True)
     
-    # Audio Player
+    # FIXED: Audio Player uses idx for unique key to prevent stale audio if word repeats
     if audio_bytes:
-        audio_mgr.render_player(audio_bytes, "Listen", f"reader_{word.english}")
+        # Key is now "reader_audio_0", "reader_audio_1" etc.
+        audio_mgr.render_player(audio_bytes, "Listen", f"reader_audio_{idx}")
     
     # Toggle Hindi / Mnemonic
-    if st.button("👁️ Show Meaning & Context", use_container_width=True, type="secondary"):
+    if st.button("👁️ Show Meaning & Context", use_container_width=True, type="secondary", key="btn_reveal"):
         st.session_state.show_hindi = not st.session_state.show_hindi
+        st.rerun()
         
     if st.session_state.show_hindi:
         st.markdown(f"""
@@ -365,11 +379,10 @@ def mode_story_reader(story_data: List[WordData], audio_mgr: AudioManager, stora
             sent_audio = audio_mgr.get_audio_bytes(word.example_sentence, slow=False)
             if sent_audio:
                 st.markdown("**🗣️ Sentence Audio:**")
-                audio_mgr.render_player(sent_audio, "Listen to Sentence", f"sent_{idx}")
+                audio_mgr.render_player(sent_audio, "Listen to Sentence", f"reader_sent_{idx}")
 
 def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: StorageManager):
     """Spaced Repetition Flashcards."""
-    # Filter words due for review, prioritized by mastery
     due_words = sorted([w for w in words if w.needs_review], key=lambda x: x.mastery_level)[:10]
     
     if not due_words:
@@ -408,7 +421,7 @@ def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: Stor
     with col2:
         if st.button("🔊 Play", key="fc_play", use_container_width=True):
             audio = audio_mgr.get_audio_bytes(word.english)
-            if audio: audio_mgr.render_player(audio, "Word", "fc_aud")
+            if audio: audio_mgr.render_player(audio, "Word", f"fc_aud_{st.session_state.fc_idx}")
 
     # Controls
     if not st.session_state.fc_reveal:
@@ -441,7 +454,6 @@ def mode_quiz(words: List[WordData], audio_mgr: AudioManager):
     if len(words) < 4: return st.info("Need at least 4 words to start a quiz.")
     
     if 'quiz_q_idx' not in st.session_state:
-        # Generate 10 random questions
         st.session_state.quiz_questions = random.sample(words, min(10, len(words)))
         st.session_state.quiz_q_idx = 0
         st.session_state.quiz_score = 0
@@ -509,25 +521,25 @@ def main():
         st.error("No JSON story files found. Please upload one.")
         return
 
-    story_names = [s['title'] for s in stories]
     # Sidebar for global settings
     with st.sidebar:
         st.header("Settings")
         st.write(f"Hello, **{profile.name}**!")
         
-        # Refresh Data
-        if st.button("🔄 Reload Files"):
-            st.rerun()
-            
         # Story Selector
         st.markdown("### Current Story")
         sel_idx = st.selectbox("Choose Story:", range(len(stories)), format_func=lambda x: stories[x]['title'])
         
+        # Refresh Data
+        if st.button("🔄 Reload Files"):
+            st.rerun()
+
         # Upload
         st.markdown("---")
         st.file_uploader("Upload JSON Story", type=["json"], key="uploader")
 
     current_story_words = stories[sel_idx]['content']
+    current_story_filename = stories[sel_idx]['filename']
     
     # Merge with saved progress
     saved_map = {w.english: w for w in saved_words}
@@ -546,7 +558,7 @@ def main():
     
     with tab1:
         st.markdown(f"### Reading: {stories[sel_idx]['title']}")
-        mode_story_reader(current_story_words, audio_mgr, storage, profile)
+        mode_story_reader(current_story_words, current_story_filename, audio_mgr, storage, profile)
         save_current()
 
     with tab2:
