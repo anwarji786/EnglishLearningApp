@@ -1,0 +1,29 @@
+{
+    "id": 4,
+    "title": "My Little House - Part 2",
+    "hindi_title": "मेरा छोटा घर - भाग 2",
+    "level": "Beginner",
+    "words_per_minute": 35,
+    "content": [
+        {"english": "There", "hindi": "वहाँ", "phonetic": "/ðeər/"},
+        {"english": "is", "hindi": "है", "phonetic": "/ɪz/"},
+        {"english": "a", "hindi": "एक", "phonetic": "/ə/"},
+        {"english": "garden", "hindi": "बगीचा", "phonetic": "/ˈɡɑːrdən/"},
+        {"english": "behind", "hindi": "पीछे", "phonetic": "/bɪˈhaɪnd/"},
+        {"english": "the", "hindi": "का", "phonetic": "/ðə/"},
+        {"english": "house", "hindi": "घर", "phonetic": "/haʊs/"},
+        {"english": "There", "hindi": "वहाँ", "phonetic": "/ðeər/"},
+        {"english": "are", "hindi": "हैं", "phonetic": "/ɑːr/"},
+        {"english": "many", "hindi": "कई", "phonetic": "/ˈmeni/"},
+        {"english": "flowers", "hindi": "फूल", "phonetic": "/ˈflaʊərz/"},
+        {"english": "in", "hindi": "में", "phonetic": "/ɪn/"},
+        {"english": "the", "hindi": "का", "phonetic": "/ðə/"},
+        {"english": "garden", "hindi": "बगीचा", "phonetic": "/ˈɡɑːrdən/"},
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "water", "hindi": "पानी देता हूँ", "phonetic": "/ˈwɔːtər/"},
+        {"english": "the", "hindi": "को", "phonetic": "/ðə/"},
+        {"english": "plants", "hindi": "पौधे", "phonetic": "/plænts/"},
+        {"english": "every", "hindi": "हर", "phonetic": "/ˈevri/"},
+        {"english": "day", "hindi": "दिन", "phonetic": "/deɪ/"}
+    ]
+}

@@ -1,0 +1,20 @@
+{
+    "id": 1,
+    "title": "The Happy Cat",
+    "hindi_title": "खुश बिल्ली",
+    "level": "Beginner",
+    "words_per_minute": 30,
+    "content": [
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "see", "hindi": "देखता हूँ", "phonetic": "/siː/"},
+        {"english": "a", "hindi": "एक", "phonetic": "/ə/"},
+        {"english": "happy", "hindi": "खुश", "phonetic": "/ˈhæpi/"},
+        {"english": "cat", "hindi": "बिल्ली", "phonetic": "/kæt/"},
+        {"english": "The", "hindi": "यह", "phonetic": "/ðə/"},
+        {"english": "cat", "hindi": "बिल्ली", "phonetic": "/kæt/"},
+        {"english": "is", "hindi": "है", "phonetic": "/ɪz/"},
+        {"english": "white", "hindi": "सफेद", "phonetic": "/waɪt/"},
+        {"english": "and", "hindi": "और", "phonetic": "/ænd/"},
+        {"english": "fluffy", "hindi": "रोएँदार", "phonetic": "/ˈflʌfi/"}
+    ]
+}

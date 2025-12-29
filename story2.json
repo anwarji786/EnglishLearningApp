@@ -1,0 +1,22 @@
+{
+    "id": 2,
+    "title": "The Red Ball",
+    "hindi_title": "लाल गेंद",
+    "level": "Beginner",
+    "words_per_minute": 40,
+    "content": [
+        {"english": "This", "hindi": "यह", "phonetic": "/ðɪs/"},
+        {"english": "is", "hindi": "है", "phonetic": "/ɪz/"},
+        {"english": "a", "hindi": "एक", "phonetic": "/ə/"},
+        {"english": "red", "hindi": "लाल", "phonetic": "/red/"},
+        {"english": "ball", "hindi": "गेंद", "phonetic": "/bɔːl/"},
+        {"english": "The", "hindi": "यह", "phonetic": "/ðə/"},
+        {"english": "ball", "hindi": "गेंद", "phonetic": "/bɔːl/"},
+        {"english": "is", "hindi": "है", "phonetic": "/ɪz/"},
+        {"english": "round", "hindi": "गोल", "phonetic": "/raʊnd/"},
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "like", "hindi": "पसंद करता हूँ", "phonetic": "/laɪk/"},
+        {"english": "to", "hindi": "को", "phonetic": "/tuː/"},
+        {"english": "play", "hindi": "खेलना", "phonetic": "/pleɪ/"}
+    ]
+}

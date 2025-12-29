@@ -1,0 +1,33 @@
+{
+    "id": 3,
+    "title": "My Happy Cat",
+    "hidi_title": "मेरी खुश कैट",
+    "level": "Beginner",
+    "words_per_minute": 35,
+    "content": [
+        {"english": "This", "hindi": "यह", "phonetic": "/ðɪs/"},
+        {"english": "is", "hindi": "है", "phonetic": "/ɪz/"},
+        {"english": "my", "hindi": "मेरी", "phonetic": "/maɪ/"},
+        {"english": "cat", "hindi": "बिल्ली", "phonetic": "/kæt/"},
+        {"english": "Her", "hindi": "उसकी", "phonetic": "/hɜːr/"},
+        {"english": "name", "hindi": "नाम", "phonetic": "/neɪm/"},
+        {"english": "is", "hindi": "है", "phonetic": "/ɪz/"},
+        {"english": "Mimi", "hindi": "मिमी", "phonetic": "/ˈmiːmiː/"},
+        {"english": "She", "hindi": "वह", "phonetic": "/ʃiː/"},
+        {"english": "is", "hindi": "है", "phonetic": "/ɪz/"},
+        {"english": "small", "hindi": "छोटी", "phonetic": "/smɔːl/"},
+        {"english": "and", "hindi": "और", "phonetic": "/ænd/"},
+        {"english": "fluffy", "hindi": "फुलफुली", "phonetic": "/ˈflʌfi/"},
+        {"english": "She", "hindi": "वह", "phonetic": "/ʃiː/"},
+        {"english": "likes", "hindi": "पसंद करती है", "phonetic": "/laɪks/"},
+        {"english": "to", "hindi": "को", "phonetic": "/tuː/"},
+        {"english": "sleep", "hindi": "सोना", "phonetic": "/sliːp/"},
+        {"english": "on", "hindi": "पर", "phonetic": "/ɒn/"},
+        {"english": "the", "hindi": "की", "phonetic": "/ðə/"},
+        {"english": "sofa", "hindi": "सोफा", "phonetic": "/ˈsəʊfə/"},
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "love", "hindi": "प्यार करता हूँ", "phonetic": "/lʌv/"},
+        {"english": "my", "hindi": "मेरी", "phonetic": "/maɪ/"},
+        {"english": "cat", "hindi": "बिल्ली", "phonetic": "/kæt/"}
+    ]
+}
