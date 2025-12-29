@@ -150,7 +150,7 @@ class AudioManager:
         return html
 
 # ============================================================================
-# STORY & DATA LOADER
+# STORY & DATA LOADER - FIXED VERSION
 # ============================================================================
 
 def load_stories_from_files():
@@ -159,11 +159,39 @@ def load_stories_from_files():
     # Filter out system files
     files = [f for f in files if os.path.basename(f) not in ["user_data.json", "requirements.txt"]]
     
+    # Expanded emoji mapping
     emoji_map = {
-        "pronoun": "👤", "verb": "🏃", "noun": "📦", "adjective": "🎨", "article": "🔤"
+        "pronoun": "👤", "verb": "🏃", "noun": "📦", "adjective": "🎨", 
+        "article": "🔤", "preposition": "📍", "adverb": "⚡", "conjunction": "🔗",
+        "interjection": "💥", "general": "📝"
     }
+    
+    # Expanded default emojis
     default_emojis = {
-        "cat": "🐱", "dog": "🐶", "house": "🏠", "eat": "🍎", "happy": "😊", "run": "🏃‍♂️"
+        # Animals
+        "cat": "🐱", "dog": "🐶", "bird": "🐦", "fish": "🐠", "horse": "🐴", 
+        "cow": "🐮", "sheep": "🐑", "elephant": "🐘", "lion": "🦁", "tiger": "🐯",
+        
+        # Common nouns
+        "house": "🏠", "car": "🚗", "tree": "🌳", "flower": "🌸", "book": "📚",
+        "pen": "🖊️", "ball": "⚽", "food": "🍕", "water": "💧", "sun": "☀️",
+        "moon": "🌙", "star": "⭐", "computer": "💻", "phone": "📱", "clock": "⏰",
+        
+        # Verbs
+        "eat": "🍎", "run": "🏃‍♂️", "jump": "🤸", "sleep": "😴", "read": "📖",
+        "write": "✍️", "swim": "🏊", "play": "🎮", "talk": "💬", "think": "🤔",
+        
+        # Adjectives
+        "happy": "😊", "sad": "😢", "big": "🐘", "small": "🐜", "fast": "⚡",
+        "slow": "🐌", "hot": "🔥", "cold": "❄️", "new": "🆕", "old": "🧓",
+        
+        # Pronouns
+        "i": "👤", "you": "👥", "he": "👨", "she": "👩", "it": "⚫",
+        "we": "👨‍👩‍👧‍👦", "they": "👥",
+        
+        # Common words
+        "hello": "👋", "goodbye": "👋", "yes": "✅", "no": "❌", "please": "🙏",
+        "thank": "🙏", "sorry": "😔", "love": "❤️", "friend": "👫", "family": "👨‍👩‍👧‍👦"
     }
 
     for filepath in sorted(files):
@@ -173,37 +201,76 @@ def load_stories_from_files():
             
             word_list = []
             for item in data.get("content", []):
+                # Get all fields from JSON
                 eng = item.get("english", "")
-                if not eng: continue
+                hindi = item.get("hindi", "")
+                phonetic = item.get("phonetic", "")
+                category = item.get("category", "general").lower()
+                difficulty = item.get("difficulty", 1)
+                example_sentence = item.get("example_sentence", f"This is {eng}.")
+                mnemonic = item.get("mnemonic", f"Think of {eng}")
+                image_hint = item.get("image_hint", "")
                 
-                cat = item.get("category", "general").lower()
-                if "pronoun" in eng.lower() or eng in ["I", "you", "he"]: cat = "pronoun"
-                elif eng in default_emojis: pass
-                else: cat = "noun"
-
-                emoji = item.get("image_hint", emoji_map.get(cat, "📝"))
-                if eng.lower() in default_emojis: emoji = default_emojis[eng.lower()]
-
+                if not eng:  # Skip empty entries
+                    continue
+                
+                # Clean the English word
+                eng_clean = eng.strip().lower()
+                
+                # Determine emoji - use provided image_hint first, then default emojis, then category-based
+                emoji = ""
+                if image_hint:
+                    emoji = image_hint
+                elif eng_clean in default_emojis:
+                    emoji = default_emojis[eng_clean]
+                else:
+                    # Map category to emoji
+                    emoji = emoji_map.get(category, "📝")
+                
+                # Handle common pronouns
+                pronoun_map = {
+                    "i": "pronoun", "you": "pronoun", "he": "pronoun", 
+                    "she": "pronoun", "it": "pronoun", "we": "pronoun", 
+                    "they": "pronoun", "me": "pronoun", "him": "pronoun", 
+                    "her": "pronoun", "us": "pronoun", "them": "pronoun"
+                }
+                
+                if eng_clean in pronoun_map:
+                    category = "pronoun"
+                    if not emoji or emoji == "📝":
+                        emoji = "👤"
+                
+                # Create WordData object
                 w = WordData(
                     english=eng,
-                    hindi=item.get("hindi", ""),
-                    phonetic=item.get("phonetic", "/?/"),
-                    category=cat,
-                    difficulty=item.get("difficulty", 1),
-                    example_sentence=item.get("example_sentence", f"This is {eng}."),
-                    mnemonic=item.get("mnemonic", f"Think of {eng}"),
+                    hindi=hindi if hindi else f"हिंदी अनुवाद {eng}",
+                    phonetic=phonetic if phonetic else f"/{eng.lower()}/",
+                    category=category,
+                    difficulty=difficulty,
+                    example_sentence=example_sentence,
+                    mnemonic=mnemonic,
                     image_hint=emoji
                 )
                 word_list.append(w)
             
+            # Get story metadata
+            title = data.get("title", os.path.basename(filepath).replace(".json", "").replace("_", " ").title())
+            level = data.get("level", "Beginner")
+            description = data.get("description", f"A story about {title}")
+            
             stories.append({
                 "filename": filepath,
-                "title": data.get("title", os.path.basename(filepath)),
-                "level": data.get("level", "Beginner"),
+                "title": title,
+                "level": level,
+                "description": description,
                 "content": word_list
             })
+            print(f"Loaded story: {title} with {len(word_list)} words")
+            
         except Exception as e:
             print(f"Error loading {filepath}: {e}")
+            import traceback
+            traceback.print_exc()
     
     return stories
 
@@ -269,6 +336,10 @@ def mode_story_reader(story_data: List[WordData], story_filename: str, audio_mgr
     if idx >= len(story_data):
         idx = len(story_data) - 1
         st.session_state.reader_idx = idx
+    
+    if len(story_data) == 0:
+        st.warning("No words found in this story.")
+        return
     
     # Navigation
     col_prev, col_center, col_next = st.columns([1, 3, 1])
@@ -473,11 +544,28 @@ def main():
         st.markdown("### Current Story")
         sel_idx = st.selectbox("Choose Story:", range(len(stories)), format_func=lambda x: stories[x]['title'])
         
+        # Show story info
+        if stories:
+            st.markdown(f"**Level:** {stories[sel_idx]['level']}")
+            st.markdown(f"**Words:** {len(stories[sel_idx]['content'])}")
+            if 'description' in stories[sel_idx]:
+                st.markdown(f"**Description:** {stories[sel_idx]['description']}")
+        
         if st.button("🔄 Reload Files"):
             st.rerun()
 
         st.markdown("---")
-        st.file_uploader("Upload JSON Story", type=["json"], key="uploader")
+        uploaded_file = st.file_uploader("Upload JSON Story", type=["json"], key="uploader")
+        if uploaded_file is not None:
+            try:
+                # Save uploaded file
+                file_path = Path(uploaded_file.name)
+                with open(file_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.success(f"Uploaded {uploaded_file.name} successfully!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error uploading file: {e}")
 
     current_story_words = stories[sel_idx]['content']
     current_story_filename = stories[sel_idx]['filename']
@@ -496,6 +584,8 @@ def main():
     
     with tab1:
         st.markdown(f"### Reading: {stories[sel_idx]['title']}")
+        if 'description' in stories[sel_idx]:
+            st.markdown(f"*{stories[sel_idx]['description']}*")
         mode_story_reader(current_story_words, current_story_filename, audio_mgr, storage, profile)
         save_current()
 
@@ -517,8 +607,9 @@ def main():
         c3.metric("Due for Review", due)
         
         import pandas as pd
-        df = pd.DataFrame([{"Word": w.english, "Mastery": w.mastery_level} for w in current_story_words])
-        st.bar_chart(df.set_index("Word"))
+        if current_story_words:
+            df = pd.DataFrame([{"Word": w.english, "Mastery": w.mastery_level} for w in current_story_words])
+            st.bar_chart(df.set_index("Word"))
 
 if __name__ == "__main__":
     main()
