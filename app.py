@@ -6,7 +6,7 @@ from pathlib import Path
 from gtts import gTTS
 import io
 from dataclasses import dataclass, asdict
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple  # <--- FIXED: Added 'Tuple' here
 import hashlib
 from datetime import datetime
 import glob
@@ -244,7 +244,7 @@ def load_custom_css(dark_mode: bool):
         @media (max-width: 768px) {{
             .stApp {{ padding-top: 0; }}
             .block-container {{ padding: 1rem !important; }}
-            .stMarkdown { font-size: 110%; }
+            .stMarkdown {{ font-size: 110%; }}
             h1 {{ font-size: 1.8rem !important; }}
             h2 {{ font-size: 1.5rem !important; }}
             button {{ width: 100%; margin-bottom: 5px; }}
@@ -388,7 +388,7 @@ def mode_flashcards(words: List[WordData], audio_mgr: AudioManager, engine: Stor
         st.success("Session Complete!")
         if st.button("Start New Session"):
             st.session_state.fc_idx = 0
-            st.session_state.fc_dirty = True # Force reload logic usually, but simplified here
+            st.session_state.fc_dirty = True
             st.rerun()
         return
 
