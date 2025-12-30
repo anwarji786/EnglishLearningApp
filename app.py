@@ -1070,7 +1070,6 @@ def main():
     st.markdown("---")
 
 
-    story = st.session_state.stories[story_idx]
 
 st.markdown("### 🎯 Click any word to learn:")
 cols_per_row = 4
