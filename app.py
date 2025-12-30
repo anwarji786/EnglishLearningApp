@@ -1129,7 +1129,7 @@ def main():
     st.title("📚 Bilingual English Master")
     st.markdown("**Learn English through Hindi | Intelligent & Adaptive**")
     
-    # Sidebar
+       # Sidebar
     with st.sidebar:
         st.markdown("## ⚙️ Settings")
         
@@ -1183,9 +1183,9 @@ def main():
                 del st.session_state.all_words
             st.rerun()
         
-        # Show current story count
+        # Show current story count - FIXED THIS LINE
         if 'stories' in st.session_state:
-            st.info(f"Currently loaded: {len(stories)} stories")
+            st.info(f"Currently loaded: {len(st.session_state.stories)} stories")
         
         # Manual file upload
         st.markdown("---")
@@ -1441,3 +1441,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
