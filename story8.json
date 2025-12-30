@@ -1,0 +1,29 @@
+{
+    "id": 7,
+    "title": "My Simple Day - Part 3",
+    "hindi_title": "मेरा साधारण दिन - भाग 3",
+    "level": "Beginner",
+    "words_per_minute": 35,
+    "content": [
+        {"english": "In", "hindi": "में", "phonetic": "/ɪn/"},
+        {"english": "the", "hindi": "का", "phonetic": "/ðə/"},
+        {"english": "evening", "hindi": "शाम", "phonetic": "/ˈiːvnɪŋ/"},
+
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "return", "hindi": "लौटता हूँ", "phonetic": "/rɪˈtɜːrn/"},
+        {"english": "home", "hindi": "घर", "phonetic": "/hoʊm/"},
+
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "rest", "hindi": "आराम करता हूँ", "phonetic": "/rest/"},
+
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "drink", "hindi": "पीता हूँ", "phonetic": "/drɪŋk/"},
+        {"english": "tea", "hindi": "चाय", "phonetic": "/tiː/"},
+
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "talk", "hindi": "बात करता हूँ", "phonetic": "/tɔːk/"},
+        {"english": "with", "hindi": "के साथ", "phonetic": "/wɪð/"},
+        {"english": "my", "hindi": "मेरे", "phonetic": "/maɪ/"},
+        {"english": "family", "hindi": "परिवार", "phonetic": "/ˈfæməli/"}
+    ]
+}

@@ -1,0 +1,29 @@
+{
+    "id": 6,
+    "title": "My Simple Day - Part 2",
+    "hindi_title": "मेरा साधारण दिन - भाग 2",
+    "level": "Beginner",
+    "words_per_minute": 35,
+    "content": [
+        {"english": "Then", "hindi": "फिर", "phonetic": "/ðen/"},
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "take", "hindi": "लेता हूँ", "phonetic": "/teɪk/"},
+        {"english": "a", "hindi": "एक", "phonetic": "/ə/"},
+        {"english": "bath", "hindi": "स्नान", "phonetic": "/bɑːθ/"},
+
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "wear", "hindi": "पहनता हूँ", "phonetic": "/weər/"},
+        {"english": "clean", "hindi": "साफ", "phonetic": "/kliːn/"},
+        {"english": "clothes", "hindi": "कपड़े", "phonetic": "/kloʊðz/"},
+
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "eat", "hindi": "खाता हूँ", "phonetic": "/iːt/"},
+        {"english": "my", "hindi": "मेरा", "phonetic": "/maɪ/"},
+        {"english": "breakfast", "hindi": "नाश्ता", "phonetic": "/ˈbrekfəst/"},
+
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "go", "hindi": "जाता हूँ", "phonetic": "/ɡoʊ/"},
+        {"english": "to", "hindi": "को", "phonetic": "/tuː/"},
+        {"english": "work", "hindi": "काम", "phonetic": "/wɜːrk/"}
+    ]
+}
