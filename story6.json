@@ -1,0 +1,28 @@
+{
+    "id": 5,
+    "title": "My Simple Day - Part 1",
+    "hindi_title": "मेरा साधारण दिन - भाग 1",
+    "level": "Beginner",
+    "words_per_minute": 35,
+    "content": [
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "wake", "hindi": "जागता हूँ", "phonetic": "/weɪk/"},
+        {"english": "up", "hindi": "उठता हूँ", "phonetic": "/ʌp/"},
+        {"english": "early", "hindi": "जल्दी", "phonetic": "/ˈɜːrli/"},
+        {"english": "in", "hindi": "में", "phonetic": "/ɪn/"},
+        {"english": "the", "hindi": "का", "phonetic": "/ðə/"},
+        {"english": "morning", "hindi": "सुबह", "phonetic": "/ˈmɔːrnɪŋ/"},
+        
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "brush", "hindi": "ब्रश करता हूँ", "phonetic": "/brʌʃ/"},
+        {"english": "my", "hindi": "मेरा", "phonetic": "/maɪ/"},
+        {"english": "teeth", "hindi": "दाँत", "phonetic": "/tiːθ/"},
+        
+        {"english": "I", "hindi": "मैं", "phonetic": "/aɪ/"},
+        {"english": "drink", "hindi": "पीता हूँ", "phonetic": "/drɪŋk/"},
+        {"english": "a", "hindi": "एक", "phonetic": "/ə/"},
+        {"english": "glass", "hindi": "गिलास", "phonetic": "/ɡlæs/"},
+        {"english": "of", "hindi": "का", "phonetic": "/ɒv/"},
+        {"english": "water", "hindi": "पानी", "phonetic": "/ˈwɔːtər/"}
+    ]
+}
