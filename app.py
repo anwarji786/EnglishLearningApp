@@ -604,7 +604,7 @@ def render_quiz_session(review_words: List[WordData], audio_manager: AudioManage
     col1, col2 = st.columns([1, 2])
     with col1:
         if st.button("Submit Answer", type="primary", use_container_width=True):
-            is_correct = selected_option == question['correct']
+            is_correct = selected_option.strip() == question['correct'].strip()
             session['answers'].append({'word': question['word'], 'selected': selected_option, 'correct': question['correct'], 'is_correct': is_correct})
             engine.update_word_mastery(question['word'], is_correct)
             session['current_index'] += 1
@@ -844,3 +844,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
